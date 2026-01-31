@@ -12,6 +12,7 @@ jobs:
   dependency-review:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    continue-on-error: true  # Don't fail the build if dependency graph is not enabled
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,4 +20,3 @@ jobs:
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: moderate
-        continue-on-error: true  # Don't fail if dependency graph is not enabled
