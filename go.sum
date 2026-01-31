@@ -7,8 +7,8 @@ github.com/emicklei/go-restful/v3 v3.11.0 h1:rAQeMHw1c7zTmncogyy8VvRZwtkmkZ4FxER
 github.com/emicklei/go-restful/v3 v3.11.0/go.mod h1:6n3XBCmQQb25CM2LCACGz8ukIrRry+4bhvbpWn3mrbc=
 github.com/fxamacker/cbor/v2 v2.7.0 h1:iM5WgngdRBanHcxugY4JySA0nk1wZorNOpTgCMedv5E=
 github.com/fxamacker/cbor/v2 v2.7.0/go.mod h1:pxXPTn3joSm21Gbwsv0w9OSA2y1HFR9qXEeXQVeNoDQ=
-github.com/github/copilot-sdk/go v0.1.18 h1:S1ocOfTKxiNGtj+/qp4z+RZeOr9hniqy3UqIIYZxsuQ=
-github.com/github/copilot-sdk/go v0.1.18/go.mod h1:0SYT+64k347IDT0Trn4JHVFlUhPtGSE6ab479tU/+tY=
+github.com/github/copilot-sdk/go v0.1.20 h1:r2+Nzr0DS7abF4499PAjsbdc9170OUEeZkic7sUR7BU=
+github.com/github/copilot-sdk/go v0.1.20/go.mod h1:0SYT+64k347IDT0Trn4JHVFlUhPtGSE6ab479tU/+tY=
 github.com/go-logr/logr v1.4.2 h1:6pFjapn8bFcIbiKo3XT4j/BhANplGihG6tvd+8rYgrY=
 github.com/go-logr/logr v1.4.2/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
 github.com/go-openapi/jsonpointer v0.19.6/go.mod h1:osyAmYz/mB/C3I+WsTTSgw1ONzaLJoLCyoi6/zppojs=
