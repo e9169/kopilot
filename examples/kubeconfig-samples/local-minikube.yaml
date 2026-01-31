@@ -1,0 +1,31 @@
+# Local Minikube Kubeconfig Example
+
+apiVersion: v1
+kind: Config
+current-context: minikube
+preferences: {}
+
+contexts:
+- context:
+    cluster: minikube
+    user: minikube
+    namespace: default
+  name: minikube
+
+clusters:
+- cluster:
+    certificate-authority: /Users/username/.minikube/ca.crt
+    server: https://127.0.0.1:55001
+    extensions:
+    - extension:
+        last-update: Mon, 20 Jan 2025 12:00:00 PST
+        provider: minikube.sigs.k8s.io
+        version: v1.32.0
+      name: cluster_info
+  name: minikube
+
+users:
+- name: minikube
+  user:
+    client-certificate: /Users/username/.minikube/profiles/minikube/client.crt
+    client-key: /Users/username/.minikube/profiles/minikube/client.key

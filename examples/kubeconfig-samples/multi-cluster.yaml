@@ -1,0 +1,51 @@
+# Multi-Cluster Kubeconfig Example
+
+apiVersion: v1
+kind: Config
+current-context: production
+preferences: {}
+
+contexts:
+- context:
+    cluster: development
+    user: dev-admin
+    namespace: default
+  name: development
+- context:
+    cluster: staging
+    user: staging-admin
+    namespace: default
+  name: staging
+- context:
+    cluster: production
+    user: prod-admin
+    namespace: default
+  name: production
+
+clusters:
+- cluster:
+    certificate-authority-data: DATA+OMITTED
+    server: https://dev-k8s.example.com:6443
+  name: development
+- cluster:
+    certificate-authority-data: DATA+OMITTED
+    server: https://staging-k8s.example.com:6443
+  name: staging
+- cluster:
+    certificate-authority-data: DATA+OMITTED
+    server: https://prod-k8s.example.com:6443
+  name: production
+
+users:
+- name: dev-admin
+  user:
+    client-certificate-data: DATA+OMITTED
+    client-key-data: DATA+OMITTED
+- name: staging-admin
+  user:
+    client-certificate-data: DATA+OMITTED
+    client-key-data: DATA+OMITTED
+- name: prod-admin
+  user:
+    client-certificate-data: DATA+OMITTED
+    client-key-data: DATA+OMITTED

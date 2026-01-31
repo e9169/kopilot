@@ -1,0 +1,42 @@
+# golangci-lint configuration
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - unparam
+    - unconvert
+    - goconst
+    - gocyclo
+    - bodyclose
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files.
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+    # Exclude long lines in go:generate
+    - linters:
+        - lll
+      source: "^//go:generate "
+
+run:
+  timeout: 5m
+  tests: true

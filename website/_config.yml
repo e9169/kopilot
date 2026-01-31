@@ -1,0 +1,46 @@
+# Site settings
+title: Kopilot
+description: Your Kubernetes AI Assistant - Deploy, debug, and optimize with natural language
+url: "https://e9169.github.io"
+baseurl: "/kopilot"
+
+# Theme
+theme: jekyll-theme-cayman
+# Alternative: remote_theme: pages-themes/cayman@v0.2.0
+
+# Collections
+collections:
+  features:
+    output: false
+
+# Defaults
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: "default"
+
+# Build settings
+markdown: kramdown
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+
+# Exclude from processing
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+  - bin
+  - pkg
+  - .git
+  - .github
+  - go.mod
+  - go.sum
+  - "*.go"
+  - Makefile
+  - README.md
+
+# GitHub metadata
+repository: e9169/kopilot

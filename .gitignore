@@ -1,0 +1,61 @@
+# Binaries and build outputs
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+coverage.txt
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories
+/vendor/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Log files
+*.log
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Generated site output
+_site/
+website/_site/
+
+# Docker (not supported)
+Dockerfile*
+.dockerignore
+
+# OS specific
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Jekyll build outputs
+website/_site/
+website/.jekyll-cache/

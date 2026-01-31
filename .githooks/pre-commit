@@ -1,0 +1,44 @@
+#!/bin/sh
+
+# Pre-commit hook for Go projects
+# Run before each commit to ensure code quality
+
+echo "Running pre-commit checks..."
+
+# Run go fmt
+echo "1/4 Checking code formatting..."
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+    echo "❌ Code is not formatted. Please run 'go fmt ./...'"
+    echo "Unformatted files:"
+    echo "$unformatted"
+    exit 1
+fi
+echo "✅ Code formatting OK"
+
+# Run go vet
+echo "2/4 Running go vet..."
+if ! go vet ./...; then
+    echo "❌ go vet failed"
+    exit 1
+fi
+echo "✅ go vet OK"
+
+# Run go mod tidy check
+echo "3/4 Checking go.mod..."
+go mod tidy
+if ! git diff --exit-code go.mod go.sum; then
+    echo "❌ go.mod or go.sum needs tidying. Please run 'go mod tidy' and commit the changes"
+    exit 1
+fi
+echo "✅ go.mod OK"
+
+# Run tests
+echo "4/4 Running tests..."
+if ! go test -short ./...; then
+    echo "❌ Tests failed"
+    exit 1
+fi
+echo "✅ Tests OK"
+
+echo "✨ All pre-commit checks passed!"

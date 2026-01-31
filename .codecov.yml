@@ -1,0 +1,56 @@
+# Codecov Configuration
+# Documentation: https://docs.codecov.io/docs/codecov-yaml
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        base: auto
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+        base: auto
+
+  precision: 2
+  round: down
+  range: "60...100"
+
+comment:
+  layout: "header, diff, flags, components, footer"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+
+ignore:
+  - "examples/**/*"
+  - "website/**/*"
+  - "_site/**/*"
+  - "**/*_test.go"
+  - "test_*.go"
+  - "main.go"  # Entry point, tested via integration
+
+# Component-based coverage
+component_management:
+  individual_components:
+    - component_id: agent
+      name: Agent Package
+      paths:
+        - pkg/agent/*.go
+        - "!pkg/agent/*_test.go"
+
+    - component_id: k8s
+      name: Kubernetes Package
+      paths:
+        - pkg/k8s/*.go
+        - "!pkg/k8s/*_test.go"
+
+# Flags for different test types
+flags:
+  unittests:
+    paths:
+      - pkg/
+    carryforward: true

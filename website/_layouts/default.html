@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    {% seo %}
+    
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link rel="preload" href="https://fonts.googleapis.com/css?family=Open+Sans:400,700&display=swap" as="style" type="text/css" crossorigin>
+    <meta name="theme-color" content="#ff6b6b">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        padding: 0;
+        margin: 0;
+        font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+        color: #e0e0e0;
+        background-color: #000000;
+        background-image: 
+          radial-gradient(circle, white 0.8px, transparent 1px),
+          radial-gradient(circle, white 1.2px, transparent 1px),
+          radial-gradient(circle, white 0.9px, transparent 1px),
+          radial-gradient(circle, white 1.8px, transparent 1px),
+          radial-gradient(circle, white 1px, transparent 1px),
+          radial-gradient(circle, white 1.4px, transparent 1px),
+          radial-gradient(circle, white 0.7px, transparent 1px),
+          radial-gradient(circle, white 1.6px, transparent 1px),
+          radial-gradient(circle, white 1.1px, transparent 1px),
+          radial-gradient(circle, white 0.9px, transparent 1px),
+          radial-gradient(circle, white 1.3px, transparent 1px),
+          radial-gradient(circle, white 2px, transparent 1px),
+          radial-gradient(circle, white 0.8px, transparent 1px),
+          radial-gradient(circle, white 1.5px, transparent 1px),
+          radial-gradient(circle, white 1px, transparent 1px),
+          radial-gradient(circle, white 1.7px, transparent 1px),
+          radial-gradient(circle, white 0.9px, transparent 1px),
+          radial-gradient(circle, white 1.2px, transparent 1px),
+          radial-gradient(circle, white 1.4px, transparent 1px),
+          radial-gradient(circle, white 0.8px, transparent 1px),
+          radial-gradient(ellipse at center, rgba(220, 38, 38, 0.15) 0%, transparent 50%),
+          radial-gradient(ellipse at 80% 20%, rgba(185, 28, 28, 0.1) 0%, transparent 40%);
+        background-size: 
+          1897px 1531px, 
+          1279px 1693px, 
+          2003px 907px, 
+          1447px 1823px, 
+          1109px 1997px, 
+          1871px 1229px, 
+          863px 1481px, 
+          1667px 1013px, 
+          1321px 1759px, 
+          1571px 887px, 
+          991px 1621px, 
+          1783px 1103px, 
+          1427px 1949px, 
+          701px 1373px, 
+          1549px 967px, 
+          1231px 1811px, 
+          1901px 1087px, 
+          829px 1547px, 
+          1643px 1291px, 
+          1039px 1709px,
+          100% 100%, 
+          100% 100%;
+        background-position: 
+          17.3% 29.7%, 
+          83.1% 64.2%, 
+          7.8% 91.5%, 
+          46.9% 13.6%, 
+          72.4% 51.8%, 
+          29.1% 77.3%, 
+          91.7% 38.4%, 
+          3.2% 68.9%, 
+          58.6% 22.1%, 
+          35.8% 84.7%, 
+          69.3% 6.4%, 
+          12.7% 49.2%, 
+          94.1% 71.6%, 
+          26.5% 18.3%, 
+          81.9% 93.8%, 
+          42.3% 35.7%, 
+          8.6% 58.1%, 
+          76.2% 44.9%, 
+          53.7% 12.8%, 
+          19.4% 87.2%, 
+          50% 50%, 
+          80% 20%;
+      }
+
+      .page-header {
+        color: #fff;
+        text-align: center;
+        background-color: #000000;
+        background-image: linear-gradient(135deg, rgba(220, 38, 38, 0.2) 0%, rgba(185, 28, 28, 0.15) 100%);
+        padding: 3rem 1rem;
+        border-bottom: 2px solid #1a0a0a;
+        position: relative;
+      }
+
+      .page-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: radial-gradient(ellipse at top, rgba(220, 38, 38, 0.25) 0%, rgba(185, 28, 28, 0.15) 40%, transparent 70%);
+        pointer-events: none;
+      }
+
+      .project-name {
+        margin-top: 0;
+        margin-bottom: 0.1rem;
+        font-size: 2.5rem;
+        font-weight: bold;
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #b91c1c 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        position: relative;
+        z-index: 1;
+      }
+
+      .project-tagline {
+        margin-bottom: 2rem;
+        font-weight: normal;
+        opacity: 0.9;
+        font-size: 1.25rem;
+        color: #b0b0b0;
+        position: relative;
+        z-index: 1;
+      }
+
+      .btn {
+        display: inline-block;
+        margin: 0.5rem;
+        color: #ffffff;
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        border: none;
+        border-radius: 0.5rem;
+        transition: all 0.3s ease;
+        padding: 0.75rem 1.5rem;
+        text-decoration: none;
+        font-weight: 600;
+        position: relative;
+        z-index: 1;
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 30px rgba(239, 68, 68, 0.6), 0 0 40px rgba(220, 38, 38, 0.4);
+      }
+
+      .main-content {
+        max-width: 64rem;
+        padding: 2rem 1rem;
+        margin: 0 auto;
+        font-size: 1.1rem;
+        background-color: transparent;
+      }
+
+      .main-content h1,
+      .main-content h2,
+      .main-content h3,
+      .main-content h4,
+      .main-content h5,
+      .main-content h6 {
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+        font-weight: bold;
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .main-content h1 {
+        font-size: 2rem;
+      }
+
+      .main-content h2 {
+        font-size: 1.75rem;
+      }
+
+      .main-content h3 {
+        font-size: 1.5rem;
+      }
+
+      .main-content p {
+        margin-bottom: 1em;
+        color: #b0b0b0;
+      }
+
+      .main-content a {
+        color: #ef4444;
+        text-decoration: none;
+        border-bottom: 1px solid transparent;
+        transition: all 0.3s;
+      }
+
+      .main-content a:hover {
+        border-bottom-color: #ef4444;
+        color: #f87171;
+      }
+
+      .main-content code {
+        padding: 2px 4px;
+        font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+        color: #ef4444;
+        background-color: #1a0a0a;
+        border-radius: 0.3rem;
+        border: 1px solid #2a1010;
+      }
+
+      .main-content pre {
+        padding: 1rem;
+        margin-top: 0;
+        margin-bottom: 1rem;
+        font: 1rem Consolas, "Liberation Mono", Menlo, Courier, monospace;
+        color: #e0e0e0;
+        word-wrap: normal;
+        background-color: #1a0a0a;
+        border: 1px solid #2a1010;
+        border-radius: 0.5rem;
+        overflow-x: auto;
+      }
+
+      .main-content pre > code {
+        padding: 0;
+        margin: 0;
+        font-size: 0.9rem;
+        color: #e0e0e0;
+        word-break: normal;
+        white-space: pre;
+        background: transparent;
+        border: 0;
+      }
+
+      .main-content blockquote {
+        padding: 0.5rem 1rem;
+        margin-left: 0;
+        color: #b0b0b0;
+        border-left: 0.3rem solid transparent;
+        border-image: linear-gradient(180deg, #ef4444, #dc2626) 1;
+        background-color: #1a0a0a;
+        border-radius: 0 0.3rem 0.3rem 0;
+      }
+
+      .main-content blockquote strong {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .main-content table {
+        display: block;
+        width: 100%;
+        overflow: auto;
+        word-break: normal;
+        word-break: keep-all;
+        border-collapse: collapse;
+        border-spacing: 0;
+        margin-top: 0;
+        margin-bottom: 1rem;
+      }
+
+      .main-content table th {
+        font-weight: bold;
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(220, 38, 38, 0.15));
+        color: #ef4444;
+      }
+
+      .main-content table th,
+      .main-content table td {
+        padding: 0.5rem 1rem;
+        border: 1px solid #2a1010;
+      }
+
+      .main-content table td {
+        background-color: #1a0a0a;
+      }
+
+      .main-content hr {
+        height: 2px;
+        padding: 0;
+        margin: 2rem 0;
+        background: linear-gradient(90deg, transparent, rgba(239, 68, 68, 0.4), transparent);
+        border: 0;
+      }
+
+      .site-footer {
+        padding-top: 2rem;
+        margin-top: 2rem;
+        border-top: 1px solid #2a1010;
+        text-align: center;
+        color: #808080;
+      }
+
+      .site-footer a {
+        color: #ef4444;
+        text-decoration: none;
+        transition: color 0.3s;
+      }
+
+      .site-footer a:hover {
+        color: #f87171;
+      }
+
+      /* Styled div containers */
+      .main-content div[style*="display: grid"] {
+        gap: 1.5rem;
+      }
+
+      .main-content div[style*="padding: 1.5rem"] {
+        background-color: #1a0a0a;
+        border: 1px solid #2a1010;
+        transition: all 0.3s ease;
+      }
+
+      .main-content div[style*="padding: 1.5rem"]:hover {
+        border-color: #ef4444;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(239, 68, 68, 0.3), 0 2px 10px rgba(220, 38, 38, 0.2);
+      }
+
+      .main-content div[style*="padding: 1rem"] {
+        background-color: #1a0a0a;
+        border: 1px solid #2a1010;
+        transition: all 0.3s ease;
+      }
+
+      .main-content div[style*="padding: 1rem"]:hover {
+        border-color: #ef4444;
+        transform: scale(1.02);
+        box-shadow: 0 0 15px rgba(239, 68, 68, 0.25);
+      }
+
+      .main-content div[style*="background: #f6f8fa"] {
+        background: #1a0a0a !important;
+        border: 1px solid #2a1010;
+        border-radius: 0.5rem;
+      }
+
+      @media screen and (min-width: 64em) {
+        .page-header {
+          padding: 4rem 6rem;
+        }
+        .project-name {
+          font-size: 3.25rem;
+        }
+        .project-tagline {
+          font-size: 1.5rem;
+        }
+        .main-content {
+          padding: 3rem 6rem;
+        }
+      }
+
+      @media screen and (min-width: 42em) and (max-width: 64em) {
+        .page-header {
+          padding: 3rem 4rem;
+        }
+        .project-name {
+          font-size: 2.75rem;
+        }
+        .project-tagline {
+          font-size: 1.35rem;
+        }
+        .main-content {
+          padding: 2rem 4rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header" role="banner">
+      <h1 class="project-name">{{ site.title }}</h1>
+      <h2 class="project-tagline">{{ site.description }}</h2>
+      <a href="https://github.com/{{ site.repository }}" class="btn">View on GitHub</a>
+      <a href="{{ site.baseurl }}/docs" class="btn">Documentation</a>
+      <a href="https://github.com/{{ site.repository }}/releases" class="btn">Download</a>
+    </header>
+
+    <main id="content" class="main-content" role="main">
+      {{ content }}
+
+      <footer class="site-footer">
+        <span class="site-footer-credits">
+          Built with ❤️ for the Kubernetes community • 
+          <a href="https://github.com/{{ site.repository }}">Open Source</a> • 
+          <a href="https://github.com/{{ site.repository }}/blob/main/LICENSE">MIT License</a>
+        </span>
+      </footer>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,26 @@
+# Sample Kubeconfig for Development
+
+apiVersion: v1
+kind: Config
+current-context: development
+contexts:
+- context:
+    cluster: development-cluster
+    user: dev-user
+    namespace: default
+  name: development
+- context:
+    cluster: development-cluster
+    user: dev-user
+    namespace: testing
+  name: development-testing
+clusters:
+- cluster:
+    server: https://dev.example.com:6443
+    certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURJVENDQWdtZ0F3SUJBZ0lJQ...(base64 encoded)
+  name: development-cluster
+users:
+- name: dev-user
+  user:
+    client-certificate-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURJVENDQWdtZ0F3SUJBZ0lJQ...(base64 encoded)
+    client-key-data: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0NBUUVBc...(base64 encoded)
