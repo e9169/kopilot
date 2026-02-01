@@ -3,7 +3,6 @@
 // Run with: go test -tags=integration ./...
 
 //go:build integration
-// +build integration
 
 package main
 

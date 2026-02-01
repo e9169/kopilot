@@ -97,14 +97,36 @@ func validateKubectlCommand(args []string) error {
 	}
 
 	// Check all arguments for injection patterns
+	if err := checkInjectionPatterns(args); err != nil {
+		return err
+	}
+
+	// Validate namespace flags if present
+	if err := validateNamespaceFlags(args); err != nil {
+		return err
+	}
+
+	// Additional validation for dangerous commands
+	if err := validateDangerousCommands(command, args); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// checkInjectionPatterns checks for command injection patterns
+func checkInjectionPatterns(args []string) error {
 	fullCommand := strings.Join(args, " ")
 	for _, pattern := range injectionPatterns {
 		if pattern.MatchString(fullCommand) {
 			return fmt.Errorf("potential command injection detected in arguments: %s", pattern.String())
 		}
 	}
+	return nil
+}
 
-	// Validate namespace flags if present
+// validateNamespaceFlags validates namespace flag values
+func validateNamespaceFlags(args []string) error {
 	for i, arg := range args {
 		if (arg == "-n" || arg == "--namespace") && i+1 < len(args) {
 			ns := args[i+1]
@@ -119,15 +141,20 @@ func validateKubectlCommand(args []string) error {
 			}
 		}
 	}
+	return nil
+}
 
-	// Additional validation for dangerous commands
-	if dangerousCommands[command] {
-		// Ensure no wildcard deletions
-		if command == "delete" {
-			for _, arg := range args {
-				if arg == "--all" || strings.Contains(arg, "*") {
-					return fmt.Errorf("bulk delete operations with --all or wildcards require extra caution")
-				}
+// validateDangerousCommands performs additional validation for dangerous commands
+func validateDangerousCommands(command string, args []string) error {
+	if !dangerousCommands[command] {
+		return nil
+	}
+
+	// Ensure no wildcard deletions
+	if command == "delete" {
+		for _, arg := range args {
+			if arg == "--all" || strings.Contains(arg, "*") {
+				return fmt.Errorf("bulk delete operations with --all or wildcards require extra caution")
 			}
 		}
 	}
