@@ -65,9 +65,9 @@ func TestNewProvider(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				tmpfile.WriteString("invalid: yaml: content: [[[")
-				tmpfile.Close()
-				return tmpfile.Name(), func() { os.Remove(tmpfile.Name()) }
+				_, _ = tmpfile.WriteString("invalid: yaml: content: [[[")
+				_ = tmpfile.Close()
+				return tmpfile.Name(), func() { _ = os.Remove(tmpfile.Name()) }
 			},
 			wantErr: true,
 		},
@@ -294,7 +294,7 @@ func createTempKubeconfig(t *testing.T, numClusters int) (string, func()) {
 
 	// Set first context as current
 	if numClusters > 0 {
-		config.CurrentContext = "context-1"
+		config.CurrentContext = testContext1
 	}
 
 	err = clientcmd.WriteToFile(*config, tmpfile.Name())
@@ -303,7 +303,7 @@ func createTempKubeconfig(t *testing.T, numClusters int) (string, func()) {
 	}
 
 	cleanup := func() {
-		os.Remove(tmpfile.Name())
+		_ = os.Remove(tmpfile.Name())
 	}
 
 	return tmpfile.Name(), cleanup
@@ -450,7 +450,7 @@ func TestNewProviderMissingCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	config := clientcmdapi.NewConfig()
 
@@ -484,7 +484,7 @@ func TestCollectNodeInfo(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a fake clientset with test nodes
-	clientset := fake.NewSimpleClientset(
+	clientset := fake.NewClientset(
 		&corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNode1,
@@ -551,7 +551,7 @@ func TestCollectNodeInfo(t *testing.T) {
 func TestCollectNamespaceList(t *testing.T) {
 	ctx := context.Background()
 
-	clientset := fake.NewSimpleClientset(
+	clientset := fake.NewClientset(
 		&corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "default",
@@ -594,7 +594,7 @@ func TestCollectNamespaceList(t *testing.T) {
 func TestCollectPodHealth(t *testing.T) {
 	ctx := context.Background()
 
-	clientset := fake.NewSimpleClientset(
+	clientset := fake.NewClientset(
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "healthy-pod",

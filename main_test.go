@@ -22,8 +22,8 @@ func TestRunWithValidKubeconfig(t *testing.T) {
 
 	// Set environment variable
 	originalKubeconfig := os.Getenv("KUBECONFIG")
-	os.Setenv("KUBECONFIG", tmpfile)
-	defer os.Setenv("KUBECONFIG", originalKubeconfig)
+	_ = os.Setenv("KUBECONFIG", tmpfile)
+	defer func() { _ = os.Setenv("KUBECONFIG", originalKubeconfig) }()
 
 	// Note: We can't actually run the full application in a unit test
 	// because it requires Copilot CLI to be installed and running
@@ -43,18 +43,18 @@ func TestRunWithMissingKubeconfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	os.Unsetenv("KUBECONFIG")
-	os.Setenv("HOME", tmpDir)
+	_ = os.Unsetenv("KUBECONFIG")
+	_ = os.Setenv("HOME", tmpDir)
 
 	defer func() {
 		if originalKubeconfig != "" {
-			os.Setenv("KUBECONFIG", originalKubeconfig)
+			_ = os.Setenv("KUBECONFIG", originalKubeconfig)
 		} else {
-			os.Unsetenv("KUBECONFIG")
+			_ = os.Unsetenv("KUBECONFIG")
 		}
-		os.Setenv("HOME", originalHome)
+		_ = os.Setenv("HOME", originalHome)
 	}()
 
 	// Verify that the default kubeconfig path is checked
@@ -78,8 +78,8 @@ func TestRunWithCustomKubeconfigPath(t *testing.T) {
 
 	// Set custom KUBECONFIG
 	originalKubeconfig := os.Getenv("KUBECONFIG")
-	os.Setenv("KUBECONFIG", tmpfile)
-	defer os.Setenv("KUBECONFIG", originalKubeconfig)
+	_ = os.Setenv("KUBECONFIG", tmpfile)
+	defer func() { _ = os.Setenv("KUBECONFIG", originalKubeconfig) }()
 
 	kubeconfigPath := os.Getenv("KUBECONFIG")
 	if kubeconfigPath != tmpfile {
@@ -108,12 +108,12 @@ func TestKubeconfigPathResolution(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			originalKubeconfig := os.Getenv("KUBECONFIG")
-			defer os.Setenv("KUBECONFIG", originalKubeconfig)
+			defer func() { _ = os.Setenv("KUBECONFIG", originalKubeconfig) }()
 
 			if tt.envValue != "" {
-				os.Setenv("KUBECONFIG", tt.envValue)
+				_ = os.Setenv("KUBECONFIG", tt.envValue)
 			} else {
-				os.Unsetenv("KUBECONFIG")
+				_ = os.Unsetenv("KUBECONFIG")
 			}
 
 			kubeconfigPath := os.Getenv("KUBECONFIG")
@@ -178,7 +178,7 @@ func createTestKubeconfig(t *testing.T) (string, func()) {
 	}
 
 	cleanup := func() {
-		os.Remove(tmpfile.Name())
+		_ = os.Remove(tmpfile.Name())
 	}
 
 	return tmpfile.Name(), cleanup

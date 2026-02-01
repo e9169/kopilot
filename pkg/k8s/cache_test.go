@@ -31,6 +31,7 @@ func TestCacheBasicFunctionality(t *testing.T) {
 	cached := provider.getCachedStatus(contextName)
 	if cached == nil {
 		t.Error("Expected to retrieve cached status, got nil")
+		return
 	}
 	if cached.Version != status.Version {
 		t.Errorf("Cached version = %s, want %s", cached.Version, status.Version)
