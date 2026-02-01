@@ -13,9 +13,9 @@ This document provides context and guidelines for GitHub Copilot when working wi
 - Intelligent cost optimization via model selection
 
 ### Technology Stack
-- **Language**: Go 1.23+
-- **Framework**: GitHub Copilot SDK (`github.com/github/copilot-sdk/go@v0.1.18`)
-- **Kubernetes**: `k8s.io/client-go@v0.31.4`
+- **Language**: Go 1.25+
+- **Framework**: GitHub Copilot SDK (`github.com/github/copilot-sdk/go@v0.1.20`)
+- **Kubernetes**: `k8s.io/client-go@v0.35.0`
 - **Target Platforms**: Linux, macOS, Windows (amd64/arm64)
 
 ## Project Structure
@@ -34,6 +34,31 @@ kopilot/
 │       └── types.go    # K8s data structures
 ├── docs/               # Detailed documentation
 └── website/            # Jekyll website (builds to website/_site/)
+```
+
+## Development Workflow
+
+### Essential Commands
+```bash
+# Build
+make build              # Build the application binary
+make deps               # Download and verify dependencies
+
+# Testing
+make test               # Run unit tests
+make test-integration   # Run integration tests (requires kubeconfig)
+make test-all          # Run all tests
+make coverage          # Generate test coverage report
+
+# Code Quality
+make fmt               # Format code with go fmt
+make lint              # Run golangci-lint
+make vet               # Run go vet
+make check             # Run all checks (fmt, vet, lint, test)
+
+# Development
+make run               # Run without building
+make install           # Install to $GOPATH/bin
 ```
 
 ## Coding Standards
