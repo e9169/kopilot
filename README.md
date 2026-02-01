@@ -140,24 +140,9 @@ For more details, see: https://docs.github.com/en/copilot/github-copilot-in-the-
 
 ### 2. Install Kopilot
 
-**Option A: Using Homebrew (recommended)**
+**Build from source**
 ```bash
-brew tap e9169/tap
-brew install kopilot
-```
-
-**Option B: Download from releases**
-```bash
-# Download the latest binary for your platform from:
-# https://github.com/e9169/kopilot/releases
-
-# macOS example:
-curl -L https://github.com/e9169/kopilot/releases/latest/download/kopilot_$(uname -s)_$(uname -m).tar.gz | tar xz
-sudo mv kopilot /usr/local/bin/
-```
-
-**Option C: Build from source**
-```bash
+git clone https://github.com/e9169/kopilot.git
 cd kopilot
 make deps
 make build
