@@ -209,6 +209,7 @@ make coverage         # Generate coverage report
 ✅ Handle errors with context
 ✅ Format code with `go fmt`
 ✅ Update documentation
+✅ Automatically fill PR templates when creating pull requests
 
 ### DON'T
 ❌ Hardcode version numbers (use git tags)
