@@ -12,19 +12,6 @@ Kopilot is an AI-powered assistant for Kubernetes cluster management. This guide
 
 ### Installation
 
-#### macOS / Linux (one-liner)
-
-```bash
-curl -fsSL https://kopilot.dev/install.sh | bash
-```
-
-#### Homebrew
-
-```bash
-brew tap e9169/kopilot
-brew install kopilot
-```
-
 #### From Source
 
 ```bash
@@ -266,7 +253,6 @@ kopilot "export all configmaps in the production namespace"
 ### Getting Help
 
 - [GitHub Issues](https://github.com/e9169/kopilot/issues)
-- [GitHub Discussions](https://github.com/e9169/kopilot/discussions)
 - [Documentation](https://e9169.github.io/kopilot)
 
 ---
