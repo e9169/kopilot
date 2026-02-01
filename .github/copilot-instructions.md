@@ -36,6 +36,31 @@ kopilot/
 └── website/            # Jekyll website (builds to website/_site/)
 ```
 
+## Development Workflow
+
+### Essential Commands
+```bash
+# Build
+make build              # Build the application binary
+make deps               # Download and verify dependencies
+
+# Testing
+make test               # Run unit tests
+make test-integration   # Run integration tests (requires kubeconfig)
+make test-all          # Run all tests
+make coverage          # Generate test coverage report
+
+# Code Quality
+make fmt               # Format code with go fmt
+make lint              # Run golangci-lint
+make vet               # Run go vet
+make check             # Run all checks (fmt, vet, lint, test)
+
+# Development
+make run               # Run without building
+make install           # Install to $GOPATH/bin
+```
+
 ## Coding Standards
 
 ### Go Conventions
