@@ -11,7 +11,7 @@
 [![Author](https://img.shields.io/badge/Author-@e9169-blue?logo=github)](https://github.com/e9169)
 [![Made in Sweden](https://img.shields.io/badge/Made%20in-Sweden-blue?logo=sweden)](https://github.com/e9169)
 
-A professional interactive agent built with the **official GitHub Copilot SDK** in Go that provides real-time status information about Kubernetes clusters from your kubeconfig file.
+An interactive agent built with the **official GitHub Copilot SDK** in Go that provides real-time status information, management, and troubleshooting about Kubernetes clusters from your kubeconfig file.
 
 > **🤖 AI-Generated Project Notice**  
 > This entire project was created during a vibe coding session using **GitHub Copilot** (Claude Sonnet 4.5 model) with the sole purpose of having fun and exploring what's possible with AI-assisted development. While it works, it started as an experiment in AI-powered software creation.  
