@@ -22,8 +22,8 @@ Branch name pattern: `main`
 - ✅ **Require branches to be up to date before merging**
 
 **Required status checks:**
-1. `Test (ubuntu-latest, 1.23)` - Ubuntu CI tests
-2. `Test (macos-latest, 1.23)` - macOS CI tests
+1. `Test (ubuntu-latest, 1.25)` - Ubuntu CI tests
+2. `Test (macos-latest, 1.25)` - macOS CI tests
 3. `Build` - Build verification
 4. `CodeQL-Go` - Security analysis
 5. `Gosec` - Security scanning
