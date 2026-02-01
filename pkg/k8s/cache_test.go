@@ -15,7 +15,7 @@ func TestCacheBasicFunctionality(t *testing.T) {
 		t.Fatalf("NewProvider() failed: %v", err)
 	}
 
-	contextName := "context-1"
+	contextName := testContext1
 	status := &ClusterStatus{
 		ClusterInfo: ClusterInfo{
 			Name:    "test-cluster",
@@ -30,8 +30,7 @@ func TestCacheBasicFunctionality(t *testing.T) {
 	// Test retrieving cached status
 	cached := provider.getCachedStatus(contextName)
 	if cached == nil {
-		t.Error("Expected to retrieve cached status, got nil")
-		return
+		t.Fatal("Expected to retrieve cached status, got nil")
 	}
 	if cached.Version != status.Version {
 		t.Errorf("Cached version = %s, want %s", cached.Version, status.Version)
@@ -51,7 +50,7 @@ func TestCacheExpiration(t *testing.T) {
 	// Set a very short TTL for testing
 	provider.SetCacheTTL(10 * time.Millisecond)
 
-	contextName := "context-1"
+	contextName := testContext1
 	status := &ClusterStatus{
 		ClusterInfo: ClusterInfo{
 			Name:    "test-cluster",
@@ -86,14 +85,14 @@ func TestClearCache(t *testing.T) {
 	}
 
 	// Cache two statuses
-	provider.cacheStatus("context-1", &ClusterStatus{Version: "v1.28.0"})
-	provider.cacheStatus("context-2", &ClusterStatus{Version: "v1.28.1"})
+	provider.cacheStatus(testContext1, &ClusterStatus{Version: "v1.28.0"})
+	provider.cacheStatus(testContext2, &ClusterStatus{Version: "v1.28.1"})
 
 	// Verify both are cached
-	if provider.getCachedStatus("context-1") == nil {
+	if provider.getCachedStatus(testContext1) == nil {
 		t.Error("Expected context-1 to be cached")
 	}
-	if provider.getCachedStatus("context-2") == nil {
+	if provider.getCachedStatus(testContext2) == nil {
 		t.Error("Expected context-2 to be cached")
 	}
 
@@ -101,10 +100,10 @@ func TestClearCache(t *testing.T) {
 	provider.ClearCache()
 
 	// Verify both are cleared
-	if provider.getCachedStatus("context-1") != nil {
+	if provider.getCachedStatus(testContext1) != nil {
 		t.Error("Expected context-1 to be cleared")
 	}
-	if provider.getCachedStatus("context-2") != nil {
+	if provider.getCachedStatus(testContext2) != nil {
 		t.Error("Expected context-2 to be cleared")
 	}
 }
@@ -148,7 +147,7 @@ func BenchmarkCacheWrite(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		provider.cacheStatus("context-1", status)
+		provider.cacheStatus(testContext1, status)
 	}
 }
 
@@ -163,10 +162,10 @@ func BenchmarkCacheRead(b *testing.B) {
 	}
 
 	status := &ClusterStatus{Version: "v1.28.0"}
-	provider.cacheStatus("context-1", status)
+	provider.cacheStatus(testContext1, status)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = provider.getCachedStatus("context-1")
+		_ = provider.getCachedStatus(testContext1)
 	}
 }
