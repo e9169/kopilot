@@ -28,15 +28,15 @@ var (
 
 	// Command injection patterns to block
 	injectionPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`[;&|]`),         // Shell operators
-		regexp.MustCompile(`\$\(`),          // Command substitution
-		regexp.MustCompile("`"),             // Backticks
-		regexp.MustCompile(`>\s*/`),         // File redirect to root
-		regexp.MustCompile(`<\s*/`),         // File read from root
-		regexp.MustCompile(`\.\./`),         // Directory traversal
-		regexp.MustCompile(`~[^/\s]*\/`),    // Home directory expansion
-		regexp.MustCompile(`\$\{`),          // Variable expansion
-		regexp.MustCompile(`\x00`),          // Null bytes
+		regexp.MustCompile(`[;&|]`),      // Shell operators
+		regexp.MustCompile(`\$\(`),       // Command substitution
+		regexp.MustCompile("`"),          // Backticks
+		regexp.MustCompile(`>\s*/`),      // File redirect to root
+		regexp.MustCompile(`<\s*/`),      // File read from root
+		regexp.MustCompile(`\.\./`),      // Directory traversal
+		regexp.MustCompile(`~[^/\s]*\/`), // Home directory expansion
+		regexp.MustCompile(`\$\{`),       // Variable expansion
+		regexp.MustCompile(`\x00`),       // Null bytes
 	}
 
 	// Allowed kubectl subcommands (whitelist approach)
@@ -55,31 +55,31 @@ var (
 		"diff":          true,
 		"auth":          true,
 		// Write commands (will be blocked in read-only mode)
-		"create":        true,
-		"apply":         true,
-		"edit":          true,
-		"delete":        true,
-		"replace":       true,
-		"patch":         true,
-		"scale":         true,
-		"autoscale":     true,
-		"rollout":       true,
-		"set":           true,
-		"label":         true,
-		"annotate":      true,
-		"expose":        true,
-		"run":           true,
-		"port-forward":  true,
-		"proxy":         true,
-		"attach":        true,
-		"exec":          true,
-		"cp":            true,
-		"drain":         true,
-		"cordon":        true,
-		"uncordon":      true,
-		"taint":         true,
-		"certificate":   true,
-		"wait":          true,
+		"create":       true,
+		"apply":        true,
+		"edit":         true,
+		"delete":       true,
+		"replace":      true,
+		"patch":        true,
+		"scale":        true,
+		"autoscale":    true,
+		"rollout":      true,
+		"set":          true,
+		"label":        true,
+		"annotate":     true,
+		"expose":       true,
+		"run":          true,
+		"port-forward": true,
+		"proxy":        true,
+		"attach":       true,
+		"exec":         true,
+		"cp":           true,
+		"drain":        true,
+		"cordon":       true,
+		"uncordon":     true,
+		"taint":        true,
+		"certificate":  true,
+		"wait":         true,
 	}
 )
 
@@ -142,7 +142,7 @@ func isValidKubernetesName(name string) bool {
 	if len(name) == 0 || len(name) > 253 {
 		return false
 	}
-	
+
 	match, _ := regexp.MatchString(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`, name)
 	return match
 }
