@@ -12,7 +12,7 @@ import (
 
 // TestGetClusterVersionWithContext tests cluster version retrieval with context
 func TestGetClusterVersionWithContext(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
+	clientset := fake.NewClientset()
 
 	ctx := context.Background()
 	version, err := getClusterVersion(ctx, clientset)
@@ -28,7 +28,7 @@ func TestGetClusterVersionWithContext(t *testing.T) {
 
 // TestGetClusterVersionWithTimeout tests context timeout handling
 func TestGetClusterVersionWithTimeout(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
+	clientset := fake.NewClientset()
 
 	// Create a context with a very short timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
@@ -68,7 +68,7 @@ func TestCollectNodeInfoWithContext(t *testing.T) {
 		},
 	}
 
-	clientset := fake.NewSimpleClientset(nodes)
+	clientset := fake.NewClientset(nodes)
 	ctx := context.Background()
 
 	nodeList, readyCount, err := collectNodeInfo(ctx, clientset)
@@ -95,7 +95,7 @@ func TestCollectNamespaceListWithContext(t *testing.T) {
 		},
 	}
 
-	clientset := fake.NewSimpleClientset(namespaces)
+	clientset := fake.NewClientset(namespaces)
 	ctx := context.Background()
 
 	nsList, err := collectNamespaceList(ctx, clientset)
@@ -149,7 +149,7 @@ func TestCollectPodHealthWithContext(t *testing.T) {
 		},
 	}
 
-	clientset := fake.NewSimpleClientset(pods)
+	clientset := fake.NewClientset(pods)
 	ctx := context.Background()
 
 	totalPods, healthyPods, unhealthyPods, err := collectPodHealth(ctx, clientset)
@@ -256,7 +256,7 @@ func BenchmarkCollectNodeInfo(b *testing.B) {
 		}
 	}
 
-	clientset := fake.NewSimpleClientset(nodes)
+	clientset := fake.NewClientset(nodes)
 	ctx := context.Background()
 
 	b.ResetTimer()
@@ -275,7 +275,7 @@ func BenchmarkCollectPodHealth(b *testing.B) {
 		pods.Items[i].Status.ContainerStatuses = []corev1.ContainerStatus{{Ready: true}}
 	}
 
-	clientset := fake.NewSimpleClientset(pods)
+	clientset := fake.NewClientset(pods)
 	ctx := context.Background()
 
 	b.ResetTimer()

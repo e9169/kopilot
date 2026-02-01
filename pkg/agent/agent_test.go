@@ -286,7 +286,7 @@ func createMockProvider(t *testing.T) *k8s.Provider {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	config := clientcmdapi.NewConfig()
 
@@ -376,7 +376,7 @@ func TestToolConcurrency(t *testing.T) {
 
 func BenchmarkDefineTools(b *testing.B) {
 	tmpfile, _ := os.CreateTemp("", "kubeconfig-*.yaml")
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	config := clientcmdapi.NewConfig()
 	config.Clusters["test"] = &clientcmdapi.Cluster{Server: "https://localhost"}

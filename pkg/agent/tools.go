@@ -50,7 +50,7 @@ func defineListClustersTool(k8sProvider *k8s.Provider, state *agentState) copilo
 			}
 
 			var result strings.Builder
-			result.WriteString(fmt.Sprintf("Found %d cluster(s):\n\n", len(clusters)))
+			fmt.Fprintf(&result, "Found %d cluster(s):\n\n", len(clusters))
 
 			for i, cluster := range clusters {
 				marker := " "
@@ -58,17 +58,17 @@ func defineListClustersTool(k8sProvider *k8s.Provider, state *agentState) copilo
 					marker = "*"
 				}
 
-				result.WriteString(fmt.Sprintf("%s [%d] Context: %s\n", marker, i+1, cluster.Context))
-				result.WriteString(fmt.Sprintf("    Cluster: %s\n", cluster.Name))
-				result.WriteString(fmt.Sprintf("    Server: %s\n", cluster.Server))
-				result.WriteString(fmt.Sprintf("    User: %s\n", cluster.User))
+				fmt.Fprintf(&result, "%s [%d] Context: %s\n", marker, i+1, cluster.Context)
+				fmt.Fprintf(&result, "    Cluster: %s\n", cluster.Name)
+				fmt.Fprintf(&result, "    Server: %s\n", cluster.Server)
+				fmt.Fprintf(&result, "    User: %s\n", cluster.User)
 				if cluster.Namespace != "" {
-					result.WriteString(fmt.Sprintf("    Default Namespace: %s\n", cluster.Namespace))
+					fmt.Fprintf(&result, "    Default Namespace: %s\n", cluster.Namespace)
 				}
 				result.WriteString("\n")
 			}
 
-			result.WriteString(fmt.Sprintf("\n* = Current context: %s\n", currentContext))
+			fmt.Fprintf(&result, "\n* = Current context: %s\n", currentContext)
 
 			return result.String(), nil
 		},
@@ -83,27 +83,27 @@ type GetClusterStatusParams struct {
 // writeUnreachableClusterStatus writes status for an unreachable cluster
 func writeUnreachableClusterStatus(result *strings.Builder, status *k8s.ClusterStatus) {
 	result.WriteString("⚠️  Status: UNREACHABLE\n")
-	result.WriteString(fmt.Sprintf("Error: %s\n\n", status.Error))
-	result.WriteString(fmt.Sprintf("Context: %s\n", status.Context))
-	result.WriteString(fmt.Sprintf("Server: %s\n", status.Server))
+	fmt.Fprintf(result, "Error: %s\n\n", status.Error)
+	fmt.Fprintf(result, "Context: %s\n", status.Context)
+	fmt.Fprintf(result, "Server: %s\n", status.Server)
 }
 
 // writeClusterInfo writes basic cluster information
 func writeClusterInfo(result *strings.Builder, status *k8s.ClusterStatus) {
 	result.WriteString("Cluster Information:\n")
-	result.WriteString(fmt.Sprintf("  Context: %s\n", status.Context))
-	result.WriteString(fmt.Sprintf("  API Server: %s\n", status.APIServerURL))
-	result.WriteString(fmt.Sprintf("  Kubernetes Version: %s\n", status.Version))
-	result.WriteString(fmt.Sprintf("  User: %s\n", status.User))
+	fmt.Fprintf(result, "  Context: %s\n", status.Context)
+	fmt.Fprintf(result, "  API Server: %s\n", status.APIServerURL)
+	fmt.Fprintf(result, "  Kubernetes Version: %s\n", status.Version)
+	fmt.Fprintf(result, "  User: %s\n", status.User)
 	if status.Namespace != "" {
-		result.WriteString(fmt.Sprintf("  Default Namespace: %s\n", status.Namespace))
+		fmt.Fprintf(result, "  Default Namespace: %s\n", status.Namespace)
 	}
 	result.WriteString("\n")
 }
 
 // writeNodeInfo writes node information for a cluster
 func writeNodeInfo(result *strings.Builder, status *k8s.ClusterStatus) {
-	result.WriteString(fmt.Sprintf("Nodes: %d total, %d healthy\n", status.NodeCount, status.HealthyNodes))
+	fmt.Fprintf(result, "Nodes: %d total, %d healthy\n", status.NodeCount, status.HealthyNodes)
 	if len(status.Nodes) > 0 {
 		result.WriteString("\nNode Details:\n")
 		for _, node := range status.Nodes {
@@ -112,8 +112,8 @@ func writeNodeInfo(result *strings.Builder, status *k8s.ClusterStatus) {
 				statusIcon = "❌"
 			}
 			roles := strings.Join(node.Roles, ", ")
-			result.WriteString(fmt.Sprintf("  %s %s\n", statusIcon, node.Name))
-			result.WriteString(fmt.Sprintf("     Status: %s | Roles: %s | Age: %s\n", node.Status, roles, node.Age))
+			fmt.Fprintf(result, "  %s %s\n", statusIcon, node.Name)
+			fmt.Fprintf(result, "     Status: %s | Roles: %s | Age: %s\n", node.Status, roles, node.Age)
 		}
 	}
 	result.WriteString("\n")
@@ -122,12 +122,12 @@ func writeNodeInfo(result *strings.Builder, status *k8s.ClusterStatus) {
 // writeNamespaceInfo writes namespace information for a cluster
 func writeNamespaceInfo(result *strings.Builder, status *k8s.ClusterStatus) {
 	if len(status.NamespaceList) > 0 {
-		result.WriteString(fmt.Sprintf("Namespaces (%d):\n", len(status.NamespaceList)))
-		result.WriteString(fmt.Sprintf("  %s\n", strings.Join(status.NamespaceList, ", ")))
+		fmt.Fprintf(result, "Namespaces (%d):\n", len(status.NamespaceList))
+		fmt.Fprintf(result, "  %s\n", strings.Join(status.NamespaceList, ", "))
 	}
 
 	if status.Error != "" {
-		result.WriteString(fmt.Sprintf("\nWarning: %s\n", status.Error))
+		fmt.Fprintf(result, "\nWarning: %s\n", status.Error)
 	}
 }
 
@@ -149,7 +149,7 @@ func defineGetClusterStatusTool(k8sProvider *k8s.Provider, state *agentState) co
 			var result strings.Builder
 
 			// Cluster header
-			result.WriteString(fmt.Sprintf("Cluster Status: %s\n", status.Name))
+			fmt.Fprintf(&result, "Cluster Status: %s\n", status.Name)
 			result.WriteString(strings.Repeat("=", 80) + "\n\n")
 
 			// Check if unreachable
@@ -235,27 +235,27 @@ func buildComparisonData(k8sProvider *k8s.Provider, ctx context.Context, context
 
 // writeComparisonEntry writes a single comparison entry to the result
 func writeComparisonEntry(result *strings.Builder, index int, comp ComparisonData) {
-	result.WriteString(fmt.Sprintf("[%d] %s\n", index+1, comp.Context))
-	result.WriteString(fmt.Sprintf("    Status: %s\n", comp.Status))
+	fmt.Fprintf(result, "[%d] %s\n", index+1, comp.Context)
+	fmt.Fprintf(result, "    Status: %s\n", comp.Status)
 
 	if comp.Name != "" {
-		result.WriteString(fmt.Sprintf("    Cluster: %s\n", comp.Name))
+		fmt.Fprintf(result, "    Cluster: %s\n", comp.Name)
 	}
 
 	if comp.Version != "" {
-		result.WriteString(fmt.Sprintf("    Version: %s\n", comp.Version))
+		fmt.Fprintf(result, "    Version: %s\n", comp.Version)
 	}
 
 	if comp.Nodes != "" {
-		result.WriteString(fmt.Sprintf("    Nodes: %s (Healthy: %s)\n", comp.Nodes, comp.HealthyNodes))
+		fmt.Fprintf(result, "    Nodes: %s (Healthy: %s)\n", comp.Nodes, comp.HealthyNodes)
 	}
 
 	if comp.APIServer != "" {
-		result.WriteString(fmt.Sprintf("    API Server: %s\n", comp.APIServer))
+		fmt.Fprintf(result, "    API Server: %s\n", comp.APIServer)
 	}
 
 	if comp.Error != "" {
-		result.WriteString(fmt.Sprintf("    Error: %s\n", comp.Error))
+		fmt.Fprintf(result, "    Error: %s\n", comp.Error)
 	}
 
 	result.WriteString("\n")
@@ -302,7 +302,7 @@ func defineCompareClustersTool(k8sProvider *k8s.Provider, state *agentState) cop
 			}
 
 			var result strings.Builder
-			result.WriteString(fmt.Sprintf("Cluster Comparison (%d clusters)\n", len(params.Contexts)))
+			fmt.Fprintf(&result, "Cluster Comparison (%d clusters)\n", len(params.Contexts))
 			result.WriteString(strings.Repeat("=", 80) + "\n\n")
 
 			// Write comparison entries
@@ -312,7 +312,7 @@ func defineCompareClustersTool(k8sProvider *k8s.Provider, state *agentState) cop
 
 			// Write summary
 			reachable := countReachableClusters(comparisons)
-			result.WriteString(fmt.Sprintf("Summary: %d/%d clusters reachable\n", reachable, len(comparisons)))
+			fmt.Fprintf(&result, "Summary: %d/%d clusters reachable\n", reachable, len(comparisons))
 
 			return result.String(), nil
 		},
@@ -388,9 +388,9 @@ func analyzeClusterHealth(statuses []*k8s.ClusterStatus) clusterHealthSummary {
 
 // writeHealthSummary writes the summary section to the result
 func writeHealthSummary(result *strings.Builder, summary clusterHealthSummary, totalClusters int) {
-	result.WriteString(fmt.Sprintf("Summary: %d/%d clusters reachable, %d fully healthy", summary.reachableCount, totalClusters, summary.healthyCount))
+	fmt.Fprintf(result, "Summary: %d/%d clusters reachable, %d fully healthy", summary.reachableCount, totalClusters, summary.healthyCount)
 	if summary.totalUnhealthyPods > 0 {
-		result.WriteString(fmt.Sprintf(", %d unhealthy pods across all clusters", summary.totalUnhealthyPods))
+		fmt.Fprintf(result, ", %d unhealthy pods across all clusters", summary.totalUnhealthyPods)
 	}
 	result.WriteString("\n\n")
 }
@@ -400,7 +400,7 @@ func writeIssues(result *strings.Builder, issues []string) {
 	if len(issues) > 0 {
 		result.WriteString("⚠️  Issues Found:\n")
 		for _, issue := range issues {
-			result.WriteString(fmt.Sprintf("  %s\n", issue))
+			fmt.Fprintf(result, "  %s\n", issue)
 		}
 		result.WriteString("\n")
 	} else {
@@ -422,7 +422,7 @@ func getClusterStatusIcon(status *k8s.ClusterStatus) string {
 // writeClusterDetails writes detailed information for a single cluster
 func writeClusterDetails(result *strings.Builder, status *k8s.ClusterStatus) {
 	statusIcon := getClusterStatusIcon(status)
-	result.WriteString(fmt.Sprintf("\n%s %s\n", statusIcon, status.Context))
+	fmt.Fprintf(result, "\n%s %s\n", statusIcon, status.Context)
 
 	if !status.IsReachable {
 		writeUnreachableClusterDetails(result, status)
@@ -434,8 +434,8 @@ func writeClusterDetails(result *strings.Builder, status *k8s.ClusterStatus) {
 // writeUnreachableClusterDetails writes details for an unreachable cluster
 func writeUnreachableClusterDetails(result *strings.Builder, status *k8s.ClusterStatus) {
 	result.WriteString("   Status: UNREACHABLE\n")
-	result.WriteString(fmt.Sprintf("   Server: %s\n", status.Server))
-	result.WriteString(fmt.Sprintf("   Error: %s\n", status.Error))
+	fmt.Fprintf(result, "   Server: %s\n", status.Server)
+	fmt.Fprintf(result, "   Error: %s\n", status.Error)
 }
 
 // writeReachableClusterDetails writes details for a reachable cluster
@@ -444,13 +444,13 @@ func writeReachableClusterDetails(result *strings.Builder, status *k8s.ClusterSt
 	if status.HealthyNodes < status.NodeCount || status.HealthyPods < status.PodCount {
 		healthStatus = "DEGRADED"
 	}
-	result.WriteString(fmt.Sprintf("   Status: %s\n", healthStatus))
-	result.WriteString(fmt.Sprintf("   Version: %s\n", status.Version))
-	result.WriteString(fmt.Sprintf("   Nodes: %d total, %d healthy\n", status.NodeCount, status.HealthyNodes))
-	result.WriteString(fmt.Sprintf("   Pods: %d total, %d healthy\n", status.PodCount, status.HealthyPods))
-	result.WriteString(fmt.Sprintf("   Server: %s\n", status.APIServerURL))
+	fmt.Fprintf(result, "   Status: %s\n", healthStatus)
+	fmt.Fprintf(result, "   Version: %s\n", status.Version)
+	fmt.Fprintf(result, "   Nodes: %d total, %d healthy\n", status.NodeCount, status.HealthyNodes)
+	fmt.Fprintf(result, "   Pods: %d total, %d healthy\n", status.PodCount, status.HealthyPods)
+	fmt.Fprintf(result, "   Server: %s\n", status.APIServerURL)
 	if status.Namespace != "" {
-		result.WriteString(fmt.Sprintf("   Default Namespace: %s\n", status.Namespace))
+		fmt.Fprintf(result, "   Default Namespace: %s\n", status.Namespace)
 	}
 
 	writeUnhealthyPods(result, status.UnhealthyPods)
@@ -462,14 +462,14 @@ func writeUnhealthyPods(result *strings.Builder, pods []k8s.PodInfo) {
 		return
 	}
 
-	result.WriteString(fmt.Sprintf("   Unhealthy Pods (%d):\n", len(pods)))
+	fmt.Fprintf(result, "   Unhealthy Pods (%d):\n", len(pods))
 	for _, pod := range pods {
-		result.WriteString(fmt.Sprintf("     - %s/%s: %s", pod.Namespace, pod.Name, pod.Status))
+		fmt.Fprintf(result, "     - %s/%s: %s", pod.Namespace, pod.Name, pod.Status)
 		if pod.Reason != "" {
-			result.WriteString(fmt.Sprintf(" (%s)", pod.Reason))
+			fmt.Fprintf(result, " (%s)", pod.Reason)
 		}
 		if pod.Restarts > 0 {
-			result.WriteString(fmt.Sprintf(" [%d restarts]", pod.Restarts))
+			fmt.Fprintf(result, " [%d restarts]", pod.Restarts)
 		}
 		result.WriteString("\n")
 	}
@@ -500,7 +500,7 @@ func defineCheckAllClustersTool(k8sProvider *k8s.Provider, state *agentState) co
 			}
 
 			var result strings.Builder
-			result.WriteString(fmt.Sprintf("Health Check Results for %d Clusters\n", len(statuses)))
+			fmt.Fprintf(&result, "Health Check Results for %d Clusters\n", len(statuses))
 			result.WriteString(strings.Repeat("=", 80) + "\n\n")
 
 			// Write summary
@@ -690,13 +690,13 @@ func buildKubectlJSONResult(clusterName, contextName, fullCommand string, output
 
 func buildKubectlTextResult(clusterName, contextName, fullCommand string, output []byte, execErr error) (string, error) {
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Cluster: %s (%s)\n", clusterName, contextName))
-	result.WriteString(fmt.Sprintf("Command: %s\n\n", fullCommand))
+	fmt.Fprintf(&result, "Cluster: %s (%s)\n", clusterName, contextName)
+	fmt.Fprintf(&result, "Command: %s\n\n", fullCommand)
 
 	if execErr != nil {
-		result.WriteString(fmt.Sprintf("❌ Error executing command on cluster %s:\n%v\n\n", clusterName, execErr))
+		fmt.Fprintf(&result, "❌ Error executing command on cluster %s:\n%v\n\n", clusterName, execErr)
 		if exitErr, ok := execErr.(*exec.ExitError); ok {
-			result.WriteString(fmt.Sprintf("Exit code: %d\n", exitErr.ExitCode()))
+			fmt.Fprintf(&result, "Exit code: %d\n", exitErr.ExitCode())
 		}
 	}
 
