@@ -106,11 +106,42 @@ BREAKING CHANGE: The /v1/old endpoint has been removed. Use /v2/new instead.
 - Push branch to origin: `git push -u origin <branch-name>`
 - Note the PR creation URL from the output
 
-### 7. Next Steps (Report to User)
+### 7. Create Pull Request
+**IMPORTANT:** After pushing the branch, you **MUST** follow the instructions in the `create-github-pull-request-from-specification.prompt.md` file located at `.github/prompts/create-github-pull-request-from-specification.prompt.md` to create the pull request.
+
+This prompt will guide you to:
+- Read the PR template from `.github/PULL_REQUEST_TEMPLATE.md`
+- Create a pull request with properly filled template
+- Ensure all required sections are completed
+- Fill in the PR body with relevant information from the commit
+
+**Technical Requirement - Using File for PR Body:**
+Always use a temporary file for the PR body to avoid shell escaping issues:
+
+```bash
+# Create temporary file with PR body content
+cat > /tmp/pr_body.md << 'EOF'
+## Summary
+[Your summary here]
+...
+EOF
+
+# Create PR using the file
+gh pr create --title "your title" --body-file /tmp/pr_body.md --base main --head your-branch
+
+# Clean up
+rm /tmp/pr_body.md
+```
+
+**Do NOT use inline `--body` flag** - it causes character corruption with special characters, newlines, and markdown formatting.
+
+**Do not skip this step** - always use the create-github-pull-request-from-specification prompt when creating PRs.
+
+### 8. Report to User
 Provide:
 - Branch name created
 - Commit message used
-- GitHub PR URL for creating the pull request
+- Pull request URL (after creating it via the specification prompt)
 - Summary of changes committed
 
 ## Important Rules
@@ -123,6 +154,7 @@ Provide:
 6. **Keep commits atomic** - One logical change per commit
 7. **Verify Go formatting** - Run `go fmt ./...` before committing Go code
 8. **Run tests if applicable** - Ensure changes don't break existing functionality
+9. **Always create PR using specification prompt** - Follow `.github/prompts/create-github-pull-request-from-specification.prompt.md` after pushing
 
 ## Error Handling
 
@@ -158,11 +190,25 @@ Implements #789"
 # 5. Push
 git push -u origin feat/add-cost-tracking
 
-# 6. Report
+# 6. Create Pull Request (REQUIRED)
+# Use a temporary file for PR body to avoid escaping issues
+cat > /tmp/pr_body.md << 'EOF'
+## Summary
+Add cost tracking feature...
+
+## Type of change
+- [x] New feature
+...
+EOF
+
+gh pr create --title "feat: add cost tracking" --body-file /tmp/pr_body.md --base main --head feat/add-cost-tracking
+rm /tmp/pr_body.md
+
+# 7. Report
 ✅ Branch created: feat/add-cost-tracking
 ✅ Changes committed with conventional commit message
 ✅ Pushed to GitHub
-📝 Create PR: https://github.com/e9169/kopilot/pull/new/feat/add-cost-tracking
+✅ Pull Request created: https://github.com/e9169/kopilot/pull/123
 ```
 
 ## Context Awareness
