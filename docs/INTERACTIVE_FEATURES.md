@@ -6,20 +6,21 @@ Kopilot has been enhanced with interactive and proactive capabilities, making it
 
 ## Key Features Implemented
 
-### 1. Proactive Cluster Health Monitoring
+### 1. Fast Parallel Cluster Health Monitoring
 
-When kopilot starts, it automatically:
+Kopilot provides a `check_all_clusters` tool that can quickly check all clusters in parallel when requested by the user. When you ask it to check your clusters, it:
 
-- Checks the status of ALL clusters in your kubeconfig
+- Checks the status of ALL clusters in your kubeconfig simultaneously
 - Identifies and reports any issues (unreachable clusters, unhealthy nodes, connection problems)
 - Provides a clear summary:
   - If issues found: Lists them with details
   - If all healthy: Confirms "All clusters are healthy ✓"
-- Asks "What would you like me to do?" to prompt user interaction
 
 **Example Output:**
 
 ```text
+> check all clusters
+
 🚀 Kopilot - Kubernetes Cluster Assistant
 
 ## 📊 Cluster Health Summary
@@ -39,10 +40,6 @@ All 10 enterprise clusters are operational:
 - US Region: dev-mgmt-01 (2 nodes), prod-test-01 (6 nodes), prod-wrk-01 (6 nodes), dev-wrk-01 (6 nodes), prod-mgmt-01 (6 nodes)
 
 All nodes are in Ready status, all clusters running Kubernetes v1.31.4.
-
-**What would you like me to do?**
-
-> 
 ```
 
 ### 2. kubectl Command Execution
@@ -81,9 +78,10 @@ Kopilot can now execute kubectl commands through natural language requests using
 **User Experience:**
 
 1. Start kopilot: `./bin/kopilot`
-2. Wait for initial health check to complete
-3. Interact naturally with requests
-4. Type `exit` or press Ctrl+C to quit
+2. See welcome message with available capabilities
+3. Type your request naturally (e.g., "check all clusters")
+4. Interact naturally with requests
+5. Type `exit` or press Ctrl+C to quit
 
 ### 4. Enhanced System Message
 
@@ -102,6 +100,7 @@ The AI assistant is configured with a comprehensive system message that:
 | `list_clusters` | Lists all clusters from kubeconfig | None |
 | `get_cluster_status` | Gets detailed status for a cluster | `context` (string) |
 | `compare_clusters` | Compares multiple clusters side by side | `contexts` (array) |
+| `check_all_clusters` | Checks health of all clusters in parallel | None |
 | `kubectl_exec` | Executes kubectl commands | `context` (string), `args` (array) |
 
 ## Technical Implementation
@@ -113,10 +112,10 @@ The AI assistant is configured with a comprehensive system message that:
 
 1. Run() function:
    - Creates Copilot client
-   - Defines tools (including kubectl_exec)
+   - Defines tools (including kubectl_exec and check_all_clusters)
    - Sets custom system message
-   - Sends initial cluster health check prompt
-   - Enters interactive loop
+   - Displays welcome message and capabilities
+   - Enters interactive loop waiting for user input
 
 2. Event Handling:
    - assistant.message_delta: Stream response chunks
@@ -145,7 +144,7 @@ type KubectlExecParams struct {
 
 ### Benefits
 
-1. **Proactive Monitoring**: Users immediately know the state of their infrastructure
+1. **Fast Parallel Monitoring**: Check all clusters simultaneously with the check_all_clusters tool
 2. **Natural Language Operations**: No need to remember kubectl syntax
 3. **Multi-Cluster Management**: Easy switching between clusters through conversation
 4. **Safe Execution**: Commands are executed with explicit context specification
@@ -167,11 +166,18 @@ $ ./bin/kopilot
 
 🚀 Kopilot - Kubernetes Cluster Assistant
 
-[Automatic health check runs...]
+Ready! I can help you with:
+  • Cluster health checks (try: check all clusters)
+  • kubectl commands (try: show me pods in default namespace)
+  • Troubleshooting (try: why is my pod failing?)
+
+Type 'exit' or 'quit' to exit.
+
+> check all clusters
+
+[Runs parallel health checks on all clusters...]
 
 **All clusters are healthy ✅**
-
-**What would you like me to do?**
 
 > show me all pods in the kube-system namespace on dev-mgmt-01
 

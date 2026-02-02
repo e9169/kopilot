@@ -29,7 +29,7 @@ An interactive agent built with the **official GitHub Copilot SDK** in Go that p
 - 🛠️ **kubectl Integration**: Execute kubectl commands through natural language
 - � **Safe by Default**: Read-only mode protects against accidental changes
 - 🔓 **Interactive Mode**: Confirmation prompts for write operations with clear visibility
-- �🚀 **Proactive Monitoring**: Automatic cluster health check on startup with pod status
+- ⚡ **Fast Health Checks**: Check all clusters in parallel with the check_all_clusters tool
 - 📋 **Pretty Output**: Markdown tables and structured formatting for easy reading
 - 💎 **Quota Tracking**: Real-time Copilot Premium request quota display with color indicators
 - 🎯 **Type-Safe Tools**: Uses Copilot SDK's DefineTool for automatic schema generation
@@ -234,13 +234,9 @@ export KUBECONFIG="/path/to/custom/kubeconfig"
 
 ### Interactive Session
 
-When you start kopilot, it automatically:
+When you start kopilot, it displays a welcome message with available capabilities.
 
-1. Checks the health of ALL your clusters
-2. Reports any issues or confirms everything is healthy
-3. Asks "What would you like me to do?"
-
-Then you can interact naturally:
+You can then interact naturally:
 
 ```bash
 > Show me pods in the default namespace on dev-mgmt-01
