@@ -106,11 +106,22 @@ BREAKING CHANGE: The /v1/old endpoint has been removed. Use /v2/new instead.
 - Push branch to origin: `git push -u origin <branch-name>`
 - Note the PR creation URL from the output
 
-### 7. Next Steps (Report to User)
+### 7. Create Pull Request
+**IMPORTANT:** After pushing the branch, you **MUST** follow the instructions in the `create-github-pull-request-from-specification.prompt.md` file located at `.github/prompts/create-github-pull-request-from-specification.prompt.md` to create the pull request.
+
+This prompt will guide you to:
+- Read the PR template from `.github/PULL_REQUEST_TEMPLATE.md`
+- Create a pull request with properly filled template
+- Ensure all required sections are completed
+- Fill in the PR body with relevant information from the commit
+
+**Do not skip this step** - always use the create-github-pull-request-from-specification prompt when creating PRs.
+
+### 8. Report to User
 Provide:
 - Branch name created
 - Commit message used
-- GitHub PR URL for creating the pull request
+- Pull request URL (after creating it via the specification prompt)
 - Summary of changes committed
 
 ## Important Rules
@@ -123,6 +134,7 @@ Provide:
 6. **Keep commits atomic** - One logical change per commit
 7. **Verify Go formatting** - Run `go fmt ./...` before committing Go code
 8. **Run tests if applicable** - Ensure changes don't break existing functionality
+9. **Always create PR using specification prompt** - Follow `.github/prompts/create-github-pull-request-from-specification.prompt.md` after pushing
 
 ## Error Handling
 
@@ -158,11 +170,15 @@ Implements #789"
 # 5. Push
 git push -u origin feat/add-cost-tracking
 
-# 6. Report
+# 6. Create Pull Request (REQUIRED)
+# Follow the create-github-pull-request-from-specification.prompt.md
+# to create PR with properly filled template
+
+# 7. Report
 ✅ Branch created: feat/add-cost-tracking
 ✅ Changes committed with conventional commit message
 ✅ Pushed to GitHub
-📝 Create PR: https://github.com/e9169/kopilot/pull/new/feat/add-cost-tracking
+✅ Pull Request created: https://github.com/e9169/kopilot/pull/123
 ```
 
 ## Context Awareness
