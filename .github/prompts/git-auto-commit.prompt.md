@@ -115,6 +115,26 @@ This prompt will guide you to:
 - Ensure all required sections are completed
 - Fill in the PR body with relevant information from the commit
 
+**Technical Requirement - Using File for PR Body:**
+Always use a temporary file for the PR body to avoid shell escaping issues:
+
+```bash
+# Create temporary file with PR body content
+cat > /tmp/pr_body.md << 'EOF'
+## Summary
+[Your summary here]
+...
+EOF
+
+# Create PR using the file
+gh pr create --title "your title" --body-file /tmp/pr_body.md --base main --head your-branch
+
+# Clean up
+rm /tmp/pr_body.md
+```
+
+**Do NOT use inline `--body` flag** - it causes character corruption with special characters, newlines, and markdown formatting.
+
 **Do not skip this step** - always use the create-github-pull-request-from-specification prompt when creating PRs.
 
 ### 8. Report to User
@@ -171,8 +191,18 @@ Implements #789"
 git push -u origin feat/add-cost-tracking
 
 # 6. Create Pull Request (REQUIRED)
-# Follow the create-github-pull-request-from-specification.prompt.md
-# to create PR with properly filled template
+# Use a temporary file for PR body to avoid escaping issues
+cat > /tmp/pr_body.md << 'EOF'
+## Summary
+Add cost tracking feature...
+
+## Type of change
+- [x] New feature
+...
+EOF
+
+gh pr create --title "feat: add cost tracking" --body-file /tmp/pr_body.md --base main --head feat/add-cost-tracking
+rm /tmp/pr_body.md
 
 # 7. Report
 ✅ Branch created: feat/add-cost-tracking
