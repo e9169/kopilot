@@ -4,7 +4,7 @@ title: Home
 ---
 
 <div style="text-align: center; padding: 4rem 0;">
-  <img src="kopilot-logo.png" alt="Kopilot Logo" style="max-width: 300px; margin-bottom: 2rem;">
+  <img src="{{ site.baseurl }}/kopilot-logo.png" alt="Kopilot Logo" style="max-width: 300px; margin-bottom: 2rem;">
   <h1 style="font-size: 3rem; margin-bottom: 1rem; background: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 50%, #ec4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">AI KUBERNETES ASSISTANT</h1>
   <p style="font-size: 1.25rem; color: #d1d5db; margin-bottom: 2rem;">Deploy services, scale pods, debug issues, manage configs.<br>All from your terminal.</p>
   <a href="https://github.com/{{ site.repository }}" class="btn" style="background: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%); color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 0.5rem; display: inline-block; margin: 0.5rem; box-shadow: 0 4px 20px rgba(139, 92, 246, 0.5), 0 0 30px rgba(6, 182, 212, 0.3);">Get Started</a>
