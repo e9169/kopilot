@@ -224,7 +224,10 @@ func startThinkingIndicator(state *agentState) {
 				fmt.Print("\r")
 				for i := 0; i < barWidth; i++ {
 					colorIdx := (i + offset) % len(colors)
-					fmt.Printf("%s━%s", colors[colorIdx], colorReset)
+					// Bounds check to satisfy gosec (G602)
+					if colorIdx >= 0 && colorIdx < len(colors) {
+						fmt.Printf("%s━%s", colors[colorIdx], colorReset)
+					}
 				}
 				offset = (offset + 1) % len(colors)
 				fmt.Print("\r") // Move cursor back to start

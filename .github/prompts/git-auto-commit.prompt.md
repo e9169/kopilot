@@ -115,8 +115,25 @@ This prompt will guide you to:
 - Ensure all required sections are completed
 - Fill in the PR body with relevant information from the commit
 
-**Technical Requirement - Using File for PR Body:**
-Always use a temporary file for the PR body to avoid shell escaping issues:
+**Technical Requirement - PR Body Creation:**
+
+**RECOMMENDED: Use inline `--body` for simple/short PR descriptions:**
+
+```bash
+gh pr create --title "your title" --body "## Summary
+Brief description here
+
+## Type of change
+- [x] Refactor
+
+## Testing
+- [x] Tests passing
+
+## Checklist
+- [x] Documentation updated" --base main --head your-branch
+```
+
+**ALTERNATIVE: Use file-based approach for complex PR bodies (if needed):**
 
 ```bash
 # Create temporary file with PR body content
@@ -133,7 +150,11 @@ gh pr create --title "your title" --body-file /tmp/pr_body.md --base main --head
 rm /tmp/pr_body.md
 ```
 
-**Do NOT use inline `--body` flag** - it causes character corruption with special characters, newlines, and markdown formatting.
+**Important Notes:**
+- Inline `--body` works well for most cases and avoids heredoc corruption issues
+- Keep PR body concise and use inline approach when possible
+- Only use file-based approach if body is very long or contains complex formatting
+- If heredoc shows corruption in terminal output, don't worry - try inline `--body` or use `gh pr edit` to fix
 
 **Do not skip this step** - always use the create-github-pull-request-from-specification prompt when creating PRs.
 
