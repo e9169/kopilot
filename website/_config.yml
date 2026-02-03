@@ -1,8 +1,8 @@
 # Site settings
 title: Kopilot
 description: Your Kubernetes AI Assistant - Deploy, debug, and optimize with natural language
-url: "https://e9169.github.io"
-baseurl: "/kopilot"
+url: "https://kopilot.fluxbyte.org"
+baseurl: ""
 
 # Theme
 theme: jekyll-theme-cayman
