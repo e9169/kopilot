@@ -33,13 +33,13 @@ An interactive agent built with the **official GitHub Copilot SDK** in Go that p
 ## Features
 
 - 🔍 **List All Clusters**: View all Kubernetes clusters configured in your kubeconfig
-- 📊 **Detailed Status**: Get comprehensive status information for specific clusters
+- 🔍 **Detailed Status**: Get comprehensive status information for specific clusters
 - ⚖️ **Compare Clusters**: Side-by-side comparison of multiple clusters
 - 🏥 **Health Monitoring**: Real-time node and **pod health** tracking across all clusters
 - ⚡ **Parallel Execution**: Check all clusters simultaneously for 5-10x faster results
 - 🤖 **Interactive Agent**: Natural language interface powered by GitHub Copilot
 - 🛠️ **kubectl Integration**: Execute kubectl commands through natural language
-- � **Safe by Default**: Read-only mode protects against accidental changes
+- 🔐 **Safe by Default**: Read-only mode protects against accidental changes
 - 🔓 **Interactive Mode**: Confirmation prompts for write operations with clear visibility
 - ⚡ **Fast Health Checks**: Check all clusters in parallel with the check_all_clusters tool
 - 📋 **Pretty Output**: Markdown tables and structured formatting for easy reading
@@ -197,13 +197,13 @@ KUBECONFIG=/path/to/kubeconfig ./bin/kopilot
 
 ### Execution Modes
 
-**🔒 Read-Only Mode (Default)**
+**� Read-Only Mode (Default)**
 - Blocks all write operations (scale, delete, apply, etc.)
 - Safe for production environments and exploratory use
 - Perfect for monitoring, troubleshooting, and viewing cluster state
 - Use `--interactive` flag to enable writes with confirmation
 
-**🔓 Interactive Mode**
+**⚡ Interactive Mode**
 - Asks for confirmation before executing write operations
 - Shows exactly what command will run
 - Allows cancellation of dangerous operations

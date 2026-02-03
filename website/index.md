@@ -54,42 +54,50 @@ make build
 
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; margin: 3rem 0;">
   <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #06b6d4, #8b5cf6) border-box; border-radius: 0.5rem;">
-    <h3 style="background: linear-gradient(135deg, #06b6d4, #0ea5e9); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">� Cluster Status</h3>
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🔍</div>
+    <h3 style="background: linear-gradient(135deg, #06b6d4, #0ea5e9); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Cluster Status</h3>
     <p>View all Kubernetes clusters from your kubeconfig with detailed status information.</p>
   </div>
   
   <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #8b5cf6, #ec4899) border-box; border-radius: 0.5rem;">
-    <h3 style="background: linear-gradient(135deg, #8b5cf6, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">⚖️ Compare Clusters</h3>
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">⚖️</div>
+    <h3 style="background: linear-gradient(135deg, #8b5cf6, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Compare Clusters</h3>
     <p>Side-by-side comparison of multiple clusters to spot differences quickly.</p>
   </div>
   
   <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #ec4899, #06b6d4) border-box; border-radius: 0.5rem;">
-    <h3 style="background: linear-gradient(135deg, #ec4899, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">🏥 Health Monitoring</h3>
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🏥</div>
+    <h3 style="background: linear-gradient(135deg, #ec4899, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Health Monitoring</h3>
     <p>Real-time node and pod health tracking across all your clusters.</p>
   </div>
   
   <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #06b6d4, #14b8a6) border-box; border-radius: 0.5rem;">
-    <h3 style="background: linear-gradient(135deg, #06b6d4, #22d3ee); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">⚡ Parallel Execution</h3>
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">⚡</div>
+    <h3 style="background: linear-gradient(135deg, #06b6d4, #22d3ee); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Parallel Execution</h3>
     <p>Check all clusters simultaneously for 5-10x faster results.</p>
   </div>
   
   <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #14b8a6, #8b5cf6) border-box; border-radius: 0.5rem;">
-    <h3 style="background: linear-gradient(135deg, #14b8a6, #2dd4bf); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">🛠️ kubectl Integration</h3>
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🛠️</div>
+    <h3 style="background: linear-gradient(135deg, #14b8a6, #2dd4bf); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">kubectl Integration</h3>
     <p>Execute kubectl commands through natural language with interactive confirmations.</p>
   </div>
   
   <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #8b5cf6, #06b6d4) border-box; border-radius: 0.5rem;">
-    <h3 style="background: linear-gradient(135deg, #a78bfa, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">🔐 Safe by Default</h3>
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🔐</div>
+    <h3 style="background: linear-gradient(135deg, #a78bfa, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Safe by Default</h3>
     <p>Read-only mode protects against accidental changes. Your kubeconfig stays local.</p>
   </div>
   
   <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #ec4899, #8b5cf6) border-box; border-radius: 0.5rem;">
-    <h3 style="background: linear-gradient(135deg, #ec4899, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">💰 Smart Model Selection</h3>
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">💰</div>
+    <h3 style="background: linear-gradient(135deg, #ec4899, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Smart Model Selection</h3>
     <p>Automatically switches between cost-effective models for simple queries and premium models for complex tasks, reducing costs by 50-70%. Works with any model from your GitHub Copilot subscription.</p>
   </div>
   
   <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #06b6d4, #ec4899) border-box; border-radius: 0.5rem;">
-    <h3 style="background: linear-gradient(135deg, #06b6d4, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">🤖 GitHub Copilot SDK</h3>
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🤖</div>
+    <h3 style="background: linear-gradient(135deg, #06b6d4, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">GitHub Copilot SDK</h3>
     <p>Built with the official GitHub Copilot SDK for natural language interaction with your clusters.</p>
   </div>
 </div>
