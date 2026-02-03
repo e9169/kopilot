@@ -12,7 +12,7 @@ title: Home
 </div>
 
 <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(245, 158, 11, 0.1)); border-left: 4px solid #ef4444; padding: 1.5rem; margin: 2rem 0; border-radius: 0.5rem;">
-  <h3 style="color: #fbbf24; margin-top: 0; display: flex; align-items: center; gap: 0.5rem;"><span style="font-size: 1.5rem;">⚠️</span> AI Output Disclaimer</h3>
+  <h3 style="margin-top: 0; display: flex; align-items: center; gap: 0.5rem;"><span style="font-size: 1.5rem; filter: none; -webkit-text-fill-color: initial; background: none;">⚠️</span><span style="color: #fbbf24;"> AI Output Disclaimer</span></h3>
   <p style="color: #d1d5db; margin-bottom: 1rem;">Kopilot uses AI models provided by GitHub Copilot to interpret requests and generate responses. <strong>AI outputs may contain errors, misinterpretations, or outdated information.</strong></p>
   <ul style="color: #d1d5db; margin: 0; padding-left: 1.5rem;">
     <li>Always verify AI suggestions before applying to production</li>
