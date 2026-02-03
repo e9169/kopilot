@@ -82,10 +82,10 @@ type GetClusterStatusParams struct {
 
 // writeUnreachableClusterStatus writes status for an unreachable cluster
 func writeUnreachableClusterStatus(result *strings.Builder, status *k8s.ClusterStatus) {
-	result.WriteString("⚠️  Status: UNREACHABLE\n")
-	fmt.Fprintf(result, "Error: %s\n\n", status.Error)
-	fmt.Fprintf(result, "Context: %s\n", status.Context)
-	fmt.Fprintf(result, "Server: %s\n", status.Server)
+	fmt.Fprintf(result, "❌ %s - DOWN (%s)\n", status.Context, status.Server)
+	if status.Error != "" {
+		fmt.Fprintf(result, "   Issue: %s\n", status.Error)
+	}
 }
 
 // writeClusterInfo writes basic cluster information
@@ -134,7 +134,7 @@ func writeNamespaceInfo(result *strings.Builder, status *k8s.ClusterStatus) {
 func defineGetClusterStatusTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
 	return copilot.DefineTool(
 		toolGetClusterStatus,
-		"Get detailed status information for a specific Kubernetes cluster including reachability, nodes, version, and health metrics",
+		"Get detailed status information for a specific Kubernetes cluster including reachability, nodes, version, and health metrics. IMPORTANT: Present the tool output exactly as received - it contains visual card/box formatting. Do NOT convert it to a table.",
 		func(params GetClusterStatusParams, inv copilot.ToolInvocation) (any, error) {
 			ctx := context.Background()
 			status, err := k8sProvider.GetClusterStatus(ctx, params.Context)
@@ -386,99 +386,23 @@ func analyzeClusterHealth(statuses []*k8s.ClusterStatus) clusterHealthSummary {
 	return summary
 }
 
-// writeHealthSummary writes the summary section to the result
-func writeHealthSummary(result *strings.Builder, summary clusterHealthSummary, totalClusters int) {
-	fmt.Fprintf(result, "Summary: %d/%d clusters reachable, %d fully healthy", summary.reachableCount, totalClusters, summary.healthyCount)
-	if summary.totalUnhealthyPods > 0 {
-		fmt.Fprintf(result, ", %d unhealthy pods across all clusters", summary.totalUnhealthyPods)
-	}
-	result.WriteString("\n\n")
-}
-
-// writeIssues writes the issues section to the result
-func writeIssues(result *strings.Builder, issues []string) {
-	if len(issues) > 0 {
-		result.WriteString("⚠️  Issues Found:\n")
-		for _, issue := range issues {
-			fmt.Fprintf(result, "  %s\n", issue)
-		}
-		result.WriteString("\n")
-	} else {
-		result.WriteString("✅ All clusters are healthy!\n\n")
-	}
-}
-
-// getClusterStatusIcon returns the appropriate icon for a cluster status
-func getClusterStatusIcon(status *k8s.ClusterStatus) string {
+// writeCompactClusterStatus writes a single-line cluster status
+func writeCompactClusterStatus(result *strings.Builder, status *k8s.ClusterStatus) {
 	if !status.IsReachable {
-		return "❌"
-	}
-	if status.HealthyNodes < status.NodeCount || status.HealthyPods < status.PodCount {
-		return "⚠️"
-	}
-	return "✅"
-}
-
-// writeClusterDetails writes detailed information for a single cluster
-func writeClusterDetails(result *strings.Builder, status *k8s.ClusterStatus) {
-	statusIcon := getClusterStatusIcon(status)
-	fmt.Fprintf(result, "\n%s %s\n", statusIcon, status.Context)
-
-	if !status.IsReachable {
-		writeUnreachableClusterDetails(result, status)
+		fmt.Fprintf(result, "❌ %s - DOWN (%s)\n", status.Context, status.Server)
+	} else if status.HealthyNodes < status.NodeCount || status.HealthyPods < status.PodCount {
+		fmt.Fprintf(result, "⚠️  %s - DEGRADED (nodes: %d/%d, pods: %d/%d)\n",
+			status.Context, status.HealthyNodes, status.NodeCount, status.HealthyPods, status.PodCount)
 	} else {
-		writeReachableClusterDetails(result, status)
-	}
-}
-
-// writeUnreachableClusterDetails writes details for an unreachable cluster
-func writeUnreachableClusterDetails(result *strings.Builder, status *k8s.ClusterStatus) {
-	result.WriteString("   Status: UNREACHABLE\n")
-	fmt.Fprintf(result, "   Server: %s\n", status.Server)
-	fmt.Fprintf(result, "   Error: %s\n", status.Error)
-}
-
-// writeReachableClusterDetails writes details for a reachable cluster
-func writeReachableClusterDetails(result *strings.Builder, status *k8s.ClusterStatus) {
-	healthStatus := "HEALTHY"
-	if status.HealthyNodes < status.NodeCount || status.HealthyPods < status.PodCount {
-		healthStatus = "DEGRADED"
-	}
-	fmt.Fprintf(result, "   Status: %s\n", healthStatus)
-	fmt.Fprintf(result, "   Version: %s\n", status.Version)
-	fmt.Fprintf(result, "   Nodes: %d total, %d healthy\n", status.NodeCount, status.HealthyNodes)
-	fmt.Fprintf(result, "   Pods: %d total, %d healthy\n", status.PodCount, status.HealthyPods)
-	fmt.Fprintf(result, "   Server: %s\n", status.APIServerURL)
-	if status.Namespace != "" {
-		fmt.Fprintf(result, "   Default Namespace: %s\n", status.Namespace)
-	}
-
-	writeUnhealthyPods(result, status.UnhealthyPods)
-}
-
-// writeUnhealthyPods writes the list of unhealthy pods
-func writeUnhealthyPods(result *strings.Builder, pods []k8s.PodInfo) {
-	if len(pods) == 0 {
-		return
-	}
-
-	fmt.Fprintf(result, "   Unhealthy Pods (%d):\n", len(pods))
-	for _, pod := range pods {
-		fmt.Fprintf(result, "     - %s/%s: %s", pod.Namespace, pod.Name, pod.Status)
-		if pod.Reason != "" {
-			fmt.Fprintf(result, " (%s)", pod.Reason)
-		}
-		if pod.Restarts > 0 {
-			fmt.Fprintf(result, " [%d restarts]", pod.Restarts)
-		}
-		result.WriteString("\n")
+		fmt.Fprintf(result, "✅ %s - HEALTHY (nodes: %d, pods: %d, v%s)\n",
+			status.Context, status.NodeCount, status.PodCount, status.Version)
 	}
 }
 
 func defineCheckAllClustersTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
 	return copilot.DefineTool(
 		toolCheckAllClusters,
-		"Check the status of ALL clusters in parallel for fast health monitoring. This is the most efficient way to get a complete overview of all clusters including their health status, node counts, version information, and any issues. Use this for initial health checks or when you need a full cluster overview.",
+		"Check the status of ALL clusters in parallel for fast health monitoring. This is the most efficient way to get a complete overview of all clusters including their health status, node counts, version information, and any issues. Use this for initial health checks or when you need a full cluster overview. IMPORTANT: Present the tool output exactly as received - it already contains visual card formatting. Do NOT convert it to a table.",
 		func(params CheckAllClustersParams, inv copilot.ToolInvocation) (any, error) {
 			ctx := context.Background()
 			statuses := k8sProvider.GetAllClusterStatuses(ctx)
@@ -500,22 +424,25 @@ func defineCheckAllClustersTool(k8sProvider *k8s.Provider, state *agentState) co
 			}
 
 			var result strings.Builder
-			fmt.Fprintf(&result, "Health Check Results for %d Clusters\n", len(statuses))
-			result.WriteString(strings.Repeat("=", 80) + "\n\n")
 
-			// Write summary
-			writeHealthSummary(&result, summary, len(statuses))
-
-			// Write issues
-			writeIssues(&result, summary.issues)
-
-			// Write detailed status for each cluster
-			result.WriteString("Cluster Details:\n")
-			result.WriteString(strings.Repeat("-", 80) + "\n")
-
-			for _, status := range statuses {
-				writeClusterDetails(&result, status)
+			// Write compact cluster status
+			for i, status := range statuses {
+				if i > 0 {
+					result.WriteString("\n")
+				}
+				writeCompactClusterStatus(&result, status)
 			}
+
+			// Write summary at the end
+			result.WriteString("\n")
+			fmt.Fprintf(&result, "📊 Summary: %d/%d reachable", summary.reachableCount, len(statuses))
+			if summary.healthyCount > 0 {
+				fmt.Fprintf(&result, ", %d healthy", summary.healthyCount)
+			}
+			if summary.totalUnhealthyPods > 0 {
+				fmt.Fprintf(&result, ", %d unhealthy pods", summary.totalUnhealthyPods)
+			}
+			result.WriteString("\n")
 
 			return result.String(), nil
 		},

@@ -13,10 +13,22 @@
 
 An interactive agent built with the **official GitHub Copilot SDK** in Go that provides real-time status information, management, and troubleshooting about Kubernetes clusters from your kubeconfig file.
 
-> **🤖 AI-Generated Project Notice**  
-> This entire project was created during a vibe coding session using **GitHub Copilot** (Claude Sonnet 4.5 model) with the sole purpose of having fun and exploring what's possible with AI-assisted development. While it works, it started as an experiment in AI-powered software creation.  
-> 
+> **🤖 AI-Generated Project Notice**
+> This entire project was created during a vibe coding session using **GitHub Copilot** (Claude Sonnet 4.5 model) with the sole purpose of having fun and exploring what's possible with AI-assisted development. While it works, it started as an experiment in AI-powered software creation.
+>
 > **Contributions welcome!** If you'd like to help turn this fun experiment into a serious, production-ready tool, pull requests are greatly appreciated.
+
+> **⚠️ AI Output Disclaimer**
+> Kopilot uses AI models (GPT-4o and GPT-4o-mini by default) to generate responses and interpret your requests. While designed to be helpful, **AI-generated outputs may contain errors, misinterpretations, or incomplete information**.
+>
+> **Important:**
+> - Always verify AI suggestions before applying them to production systems
+> - Review kubectl commands before confirming execution (especially in interactive mode)
+> - AI models can hallucinate or provide outdated information
+> - Use read-only mode when learning or testing to prevent unintended changes
+> - This tool is provided "as-is" without warranties - see [LICENSE](LICENSE) for details
+>
+> **You are responsible for understanding and verifying all operations performed on your Kubernetes clusters.**
 
 ## Features
 
@@ -31,7 +43,8 @@ An interactive agent built with the **official GitHub Copilot SDK** in Go that p
 - 🔓 **Interactive Mode**: Confirmation prompts for write operations with clear visibility
 - ⚡ **Fast Health Checks**: Check all clusters in parallel with the check_all_clusters tool
 - 📋 **Pretty Output**: Markdown tables and structured formatting for easy reading
-- 💎 **Quota Tracking**: Real-time Copilot Premium request quota display with color indicators
+- 💎 **Persistent Quota Display**: Real-time Copilot Premium request quota with color-coded indicators (see [docs/UI_ENHANCEMENTS.md](docs/UI_ENHANCEMENTS.md))
+- 🌈 **Animated Thinking Indicator**: Visual gradient animation while processing requests
 - 🎯 **Type-Safe Tools**: Uses Copilot SDK's DefineTool for automatic schema generation
 - 💰 **Smart Cost Optimization**: Intelligent model selection based on task complexity (see [docs/MODEL_SELECTION.md](docs/MODEL_SELECTION.md))
   - Uses `gpt-4o-mini` for simple queries (list, status, health checks)
@@ -264,7 +277,7 @@ The agent will execute kubectl commands on your behalf and explain the results.
 
 ## Author
 
-**Eneko P** ([@e9169](https://github.com/e9169))  
+**Eneko P** ([@e9169](https://github.com/e9169))
 📍 Based in Sweden
 
 ## License

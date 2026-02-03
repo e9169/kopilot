@@ -129,7 +129,22 @@ Kopilot uses intelligent model selection for cost optimization:
 
 Use `selectModelForPrompt()` function to determine the appropriate model based on prompt analysis.
 
-#### 4. Parallel Execution
+#### 4. Output Formatting
+Kopilot uses clean, compact output formatting:
+
+**Tool Output:**
+- Single-line compact format for cluster status
+- Emoji indicators: ✅ (healthy), ⚠️ (degraded), ❌ (down)
+- Format: `✅ context - HEALTHY (nodes: X, pods: Y, vX.X.X)`
+- No verbose tables or boxes - keep it concise
+
+**AI Response Formatting:**
+- System message instructs AI to NOT create markdown tables
+- Use emoji + uppercase for headers: 🔵 STATUS:, ⚠️ POSSIBLE CAUSES:, ✅ NEXT STEPS:
+- Present tool output verbatim - don't reformat
+- Keep responses conversational and brief
+
+#### 5. Parallel Execution
 When checking multiple clusters, use goroutines with sync.WaitGroup:
 
 ```go
@@ -143,12 +158,6 @@ for _, cluster := range clusters {
 }
 wg.Wait()
 ```
-
-#### 5. Output Formatting
-- Use **Markdown tables** for structured data presentation
-- Support both `OutputText` and `OutputJSON` formats
-- Include ANSI colors for terminal output (via `color*` constants)
-- Show quota information with color-coded indicators
 
 #### 6. Version Management
 - Version is set via git tags, not hardcoded
@@ -208,7 +217,8 @@ make coverage         # Generate coverage report
 ✅ Consider model selection for cost optimization
 ✅ Handle errors with context
 ✅ Format code with `go fmt`
-✅ Update documentation
+✅ Update documentation after code changes (especially for user-facing features)
+✅ Run tests and build after code changes to verify integrity
 ✅ Automatically fill PR templates when creating pull requests
 
 ### DON'T
