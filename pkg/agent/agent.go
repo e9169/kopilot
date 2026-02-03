@@ -42,14 +42,24 @@ const (
 	defaultModelPremium       = "gpt-4o"      // Premium model for complex tasks
 
 	// ANSI color codes
-	colorReset   = "\033[0m"
-	colorRed     = "\033[31m"
-	colorGreen   = "\033[32m"
-	colorYellow  = "\033[33m"
-	colorMagenta = "\033[35m"
-	colorCyan    = "\033[36m"
-	colorBold    = "\033[1m"
-	colorDim     = "\033[2m"
+	colorReset     = "\033[0m"
+	colorRed       = "\033[31m"
+	colorGreen     = "\033[32m"
+	colorYellow    = "\033[33m"
+	colorMagenta   = "\033[35m"
+	colorCyan      = "\033[36m"
+	colorBold      = "\033[1m"
+	colorDim       = "\033[2m"
+	gradientColor1 = "\033[38;5;51m"  // Bright cyan
+	gradientColor2 = "\033[38;5;45m"  // Cyan-blue
+	gradientColor3 = "\033[38;5;39m"  // Blue
+	gradientColor4 = "\033[38;5;69m"  // Blue-magenta
+	gradientColor5 = "\033[38;5;99m"  // Magenta
+	gradientColor6 = "\033[38;5;135m" // Light magenta
+
+	cursorHide = "\033[?25l"
+	cursorShow = "\033[?25h"
+	clearLine  = "\033[2K"
 )
 
 const (
@@ -83,8 +93,12 @@ var readOnlyCommands = []string{
 
 // agentState holds the runtime state of the agent
 type agentState struct {
-	mode         ExecutionMode
-	outputFormat OutputFormat
+	mode             ExecutionMode
+	outputFormat     OutputFormat
+	quotaPercentage  float64
+	quotaDisplayed   bool
+	isThinking       bool
+	thinkingStopChan chan bool
 }
 
 func isJSONOutput(format OutputFormat) bool {
@@ -151,22 +165,25 @@ When first started:
 For presenting information:
 - ALWAYS use Markdown tables for structured data (cluster comparisons, pod lists, node status, etc.)
 - Keep table cells SHORT and CONCISE (max 20 characters per cell)
-- Use abbreviations in tables (e.g., "UNREACH" instead of "UNREACHABLE")
-- Put detailed explanations AFTER the table, not inside cells
-- Use bullet points for lists outside tables
-- Use emojis and formatting (bold, headers) to make output readable and pretty
-- Example GOOD table format:
-  | Cluster | Status | Nodes | Pods | Issues |
-  |---------|--------|-------|------|--------|
-  | prod-01 | ✅ OK  | 6/6   | 45/48| 3 fail |
-  
-  Details:
-  - prod-01: 3 pods failing in namespace monitoring
-  
-- Example BAD table (cells too long):
-  | Cluster | Issues |
-  |---------|--------|
-  | prod-01 | 3 pods in CrashLoopBackOff in grafana-monitoring namespace |
+🚨 CRITICAL OUTPUT FORMATTING RULES 🚨
+
+TOOL OUTPUT HANDLING:
+- Present tool results VERBATIM - copy/paste without any changes
+- NEVER create markdown tables (| | | format) in your responses
+- NEVER reformat tool output into tables
+- Do NOT summarize, restructure, or re-present tool results
+- Tool output already has proper visual formatting (boxes, cards, emojis)
+- Just show the tool output as-is and add brief commentary BELOW it
+
+YOUR RESPONSE FORMAT:
+- Show tool output first (unmodified)
+- Add your analysis below using bullet points
+- Use emojis + UPPERCASE for section headers (no markdown, no ANSI codes):
+  * 🔵 STATUS:
+  * ⚠️  POSSIBLE CAUSES:
+  * ✅ NEXT STEPS:
+  * 💡 SUGGESTION:
+- Keep responses conversational and concise
 
 For user requests:
 - Use kubectl_exec tool to run kubectl commands when users ask for operations
@@ -175,6 +192,100 @@ For user requests:
 - Show command output and interpret results for the user
 
 Be conversational, proactive, and helpful!`
+}
+
+// startThinkingIndicator starts the animated gradient thinking line
+func startThinkingIndicator(state *agentState) {
+	if isJSONOutput(state.outputFormat) {
+		return
+	}
+
+	state.isThinking = true
+	state.thinkingStopChan = make(chan bool)
+
+	go func() {
+		colors := []string{
+			gradientColor1, gradientColor2, gradientColor3,
+			gradientColor4, gradientColor5, gradientColor6,
+		}
+		offset := 0
+		barWidth := 60
+
+		fmt.Print(cursorHide)       // Hide cursor during animation
+		defer fmt.Print(cursorShow) // Show cursor when done
+
+		for {
+			select {
+			case <-state.thinkingStopChan:
+				fmt.Print("\r" + clearLine) // Clear the line
+				return
+			default:
+				// Build gradient bar
+				fmt.Print("\r")
+				for i := 0; i < barWidth; i++ {
+					colorIdx := (i + offset) % len(colors)
+					// Bounds check to satisfy gosec (G602)
+					if colorIdx >= 0 && colorIdx < len(colors) {
+						fmt.Printf("%s━%s", colors[colorIdx], colorReset)
+					}
+				}
+				offset = (offset + 1) % len(colors)
+				fmt.Print("\r") // Move cursor back to start
+
+				// Sleep for animation frame
+				// Use a select to allow immediate cancellation
+				select {
+				case <-state.thinkingStopChan:
+					fmt.Print("\r" + clearLine)
+					return
+				case <-func() <-chan bool {
+					ch := make(chan bool)
+					go func() {
+						// 80ms delay for smooth animation
+						for i := 0; i < 8; i++ {
+							select {
+							case <-state.thinkingStopChan:
+								close(ch)
+								return
+							default:
+								// 10ms increments = 80ms total
+								// This allows faster response to stop signal
+								for j := 0; j < 1000000; j++ {
+									// Busy wait for ~10ms
+								}
+							}
+						}
+						close(ch)
+					}()
+					return ch
+				}():
+				}
+			}
+		}
+	}()
+}
+
+// stopThinkingIndicator stops the animated gradient thinking line
+func stopThinkingIndicator(state *agentState) {
+	if !state.isThinking {
+		return
+	}
+	if state.thinkingStopChan != nil {
+		close(state.thinkingStopChan)
+		state.thinkingStopChan = nil
+	}
+	state.isThinking = false
+}
+
+// displayPersistentQuota shows the quota information persistently
+func displayPersistentQuota(state *agentState) {
+	if isJSONOutput(state.outputFormat) || state.quotaPercentage < 0 {
+		return
+	}
+
+	statusIcon := getQuotaStatusIcon(state.quotaPercentage)
+	quotaColor := getQuotaColor(state.quotaPercentage)
+	fmt.Printf("%s[%s %s%.1f%% remaining%s]%s\n", colorDim, statusIcon, quotaColor, state.quotaPercentage, colorReset, colorReset)
 }
 
 // getQuotaStatusIcon returns the appropriate icon based on remaining percentage
@@ -197,85 +308,71 @@ func getQuotaColor(percentage float64) string {
 	return colorGreen
 }
 
-// getToolIcon returns the appropriate icon for a tool
-func getToolIcon(toolName string) string {
-	switch toolName {
-	case toolListClusters:
-		return "📋"
-	case toolGetClusterStatus:
-		return "🔍"
-	case toolCompareClusters:
-		return "⚖️"
-	case toolCheckAllClusters:
-		return "🏥"
-	case toolKubectlExec:
-		return "⚡"
-	default:
-		return "🔧"
-	}
-}
-
 // setupSessionEventHandler creates and returns an event handler for the session
-func setupSessionEventHandler(session *copilot.Session, isIdlePtr *bool, lastQuotaPtr *float64, messageBuffer *strings.Builder, outputFormat OutputFormat) {
+func setupSessionEventHandler(session *copilot.Session, isIdlePtr *bool, state *agentState, messageBuffer *strings.Builder) {
 	session.On(func(event copilot.SessionEvent) {
 		switch event.Type {
 		case "assistant.message_delta":
-			if event.Data.DeltaContent != nil {
+			// Stop thinking indicator on first content
+			if event.Data.DeltaContent != nil && len(*event.Data.DeltaContent) > 0 {
+				stopThinkingIndicator(state)
+				// Show quota before first message if available
+				if state.quotaDisplayed && messageBuffer.Len() == 0 {
+					displayPersistentQuota(state)
+				}
 				fmt.Print(*event.Data.DeltaContent)
 				messageBuffer.WriteString(*event.Data.DeltaContent)
 			}
 		case "assistant.message":
+			stopThinkingIndicator(state)
 			if messageBuffer.Len() == 0 && event.Data.Content != nil {
+				// Show quota before message if available
+				if state.quotaDisplayed {
+					displayPersistentQuota(state)
+				}
 				fmt.Print(*event.Data.Content)
 			}
 			fmt.Println()
 			messageBuffer.Reset()
 		case "session.idle":
+			stopThinkingIndicator(state)
 			*isIdlePtr = true
 		case "assistant.usage":
-			handleUsageEvent(event, lastQuotaPtr, outputFormat)
+			handleUsageEvent(event, state)
 		case "tool.execution_start":
-			handleToolExecutionStart(event, outputFormat)
+			handleToolExecutionStart(event, state.outputFormat)
 		}
 	})
 }
 
 // handleUsageEvent processes usage events and displays quota information
-func handleUsageEvent(event copilot.SessionEvent, lastQuotaPtr *float64, outputFormat OutputFormat) {
-	if isJSONOutput(outputFormat) {
-		return
-	}
+func handleUsageEvent(event copilot.SessionEvent, state *agentState) {
 	if event.Data.QuotaSnapshots == nil {
 		return
 	}
 
 	if snapshot, exists := event.Data.QuotaSnapshots["premium_interactions"]; exists {
 		if snapshot.RemainingPercentage >= 0 {
-			*lastQuotaPtr = snapshot.RemainingPercentage
-			statusIcon := getQuotaStatusIcon(*lastQuotaPtr)
-			quotaColor := getQuotaColor(*lastQuotaPtr)
-			fmt.Printf("[%s %s%.1f%% quota%s] ", statusIcon, quotaColor, *lastQuotaPtr, colorReset)
+			state.quotaPercentage = snapshot.RemainingPercentage
+			state.quotaDisplayed = true
 		}
 	}
 }
 
 // handleToolExecutionStart displays tool execution notifications
 func handleToolExecutionStart(event copilot.SessionEvent, outputFormat OutputFormat) {
-	if isJSONOutput(outputFormat) {
-		return
-	}
-	if event.Data.ToolName != nil {
-		toolIcon := getToolIcon(*event.Data.ToolName)
-		fmt.Printf("%s%s %s%s%s...%s\n", colorCyan, toolIcon, colorBold, *event.Data.ToolName, colorReset, colorReset)
-	}
+	// Tool execution happens silently - output is shown when complete
 }
 
 // Run starts the Copilot agent with Kubernetes cluster tools
 func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputFormat) error {
 	// Initialize agent state
 	state := &agentState{
-		mode:         mode,
-		outputFormat: outputFormat,
+		mode:            mode,
+		outputFormat:    outputFormat,
+		quotaPercentage: -1,
+		quotaDisplayed:  false,
+		isThinking:      false,
 	}
 
 	// Create and start Copilot client
@@ -299,8 +396,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	// Set up event handling
 	messageBuffer := strings.Builder{}
 	var isIdle bool
-	var lastQuotaPercentage float64 = -1
-	setupSessionEventHandler(session, &isIdle, &lastQuotaPercentage, &messageBuffer, outputFormat)
+	setupSessionEventHandler(session, &isIdle, state, &messageBuffer)
 
 	if !isJSONOutput(outputFormat) {
 		// Display welcome message without consuming quota
@@ -314,7 +410,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 		fmt.Printf("%sExecution Mode:%s %s%s %s%s\n", colorDim, colorReset, modeIcon, colorBold, mode, colorReset)
 		fmt.Printf("%sModel:%s %s%s%s\n\n", colorDim, colorReset, colorBold, modelCostEffective, colorReset)
 
-		fmt.Printf("%sReady!%s I can help you with:\n", colorBold+colorGreen, colorReset)
+		fmt.Printf("%sReady!%s\n\nI can help you with:\n", colorBold+colorGreen, colorReset)
 		fmt.Printf("  %s•%s Cluster health checks (try: %scheck all clusters%s)\n", colorGreen, colorReset, colorCyan, colorReset)
 		fmt.Printf("  %s•%s kubectl commands (try: %sshow me pods in default namespace%s)\n", colorGreen, colorReset, colorCyan, colorReset)
 		fmt.Printf("  %s•%s Troubleshooting (try: %swhy is my pod failing?%s)\n", colorGreen, colorReset, colorCyan, colorReset)
@@ -333,7 +429,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	isIdle = true
 
 	// Interactive loop with session management
-	return interactiveLoopWithModelSelection(client, k8sProvider, state, session, &isIdle, &messageBuffer, &lastQuotaPercentage)
+	return interactiveLoopWithModelSelection(client, k8sProvider, state, session, &isIdle, &messageBuffer)
 }
 
 // findCopilotCLI attempts to locate the Copilot CLI executable
@@ -626,7 +722,6 @@ func switchToModel(
 	oldSession *copilot.Session,
 	newModel string,
 	isIdle *bool,
-	lastQuotaPercentage *float64,
 	messageBuffer *strings.Builder,
 ) (*copilot.Session, error) {
 	// Destroy old session
@@ -641,7 +736,7 @@ func switchToModel(
 	}
 
 	// Set up event handling for new session
-	setupSessionEventHandler(newSession, isIdle, lastQuotaPercentage, messageBuffer, state.outputFormat)
+	setupSessionEventHandler(newSession, isIdle, state, messageBuffer)
 
 	// Wait for new session to be ready
 	waitForIdle(isIdle)
@@ -657,7 +752,6 @@ func interactiveLoopWithModelSelection(
 	initialSession *copilot.Session,
 	isIdle *bool,
 	messageBuffer *strings.Builder,
-	lastQuotaPercentage *float64,
 ) error {
 	reader := bufio.NewReader(os.Stdin)
 	currentSession := initialSession
@@ -692,7 +786,7 @@ func interactiveLoopWithModelSelection(
 		// Switch model if needed
 		if optimalModel != currentModel {
 			log.Printf("%sSwitching from %s to %s for query complexity%s", colorMagenta, currentModel, optimalModel, colorReset)
-			currentSession, err = switchToModel(client, k8sProvider, state, currentSession, optimalModel, isIdle, lastQuotaPercentage, messageBuffer)
+			currentSession, err = switchToModel(client, k8sProvider, state, currentSession, optimalModel, isIdle, messageBuffer)
 			if err != nil {
 				return err
 			}
@@ -701,10 +795,15 @@ func interactiveLoopWithModelSelection(
 
 		// Send user message
 		*isIdle = false
+
+		// Start thinking indicator
+		startThinkingIndicator(state)
+
 		_, err = currentSession.Send(copilot.MessageOptions{
 			Prompt: input,
 		})
 		if err != nil {
+			stopThinkingIndicator(state)
 			return fmt.Errorf("failed to send message: %w", err)
 		}
 	}

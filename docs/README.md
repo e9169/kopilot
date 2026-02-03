@@ -9,6 +9,7 @@ This directory contains technical documentation for developers and contributors.
 - **[MODEL_SELECTION.md](MODEL_SELECTION.md)** - Intelligent model selection strategy for cost optimization (gpt-4o-mini vs gpt-4o)
 - **[PERFORMANCE.md](PERFORMANCE.md)** - Performance optimization details, including parallel cluster checking implementation
 - **[INTERACTIVE_FEATURES.md](INTERACTIVE_FEATURES.md)** - Interactive and proactive features implementation, including kubectl command execution
+- **[UI_ENHANCEMENTS.md](UI_ENHANCEMENTS.md)** - User interface enhancements including persistent quota display and animated thinking indicator
 - **[VERSION_MANAGEMENT.md](VERSION_MANAGEMENT.md)** - Versioning strategy and release workflow using Git tags
 
 ## For Users
