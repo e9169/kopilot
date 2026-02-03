@@ -45,18 +45,18 @@ copilot auth login
 
 ### AI Models
 
-Kopilot works with **all models available through your GitHub Copilot subscription**.
+Kopilot works with **any model available through your GitHub Copilot subscription**.
 
-**Default models:**
-- **gpt-4o-mini** - Used for simple queries and status checks (cost-effective)
-- **gpt-4o** - Automatically selected for troubleshooting and complex operations
+**Default configuration:**
+- **Cost-effective model** (default: gpt-4o-mini) - Used for simple queries and status checks
+- **Premium model** (default: gpt-4o) - Automatically selected for troubleshooting and complex operations
 
 **Customization:**
 
-You can use any model from your Copilot subscription by setting environment variables:
+You can override the default models by setting environment variables:
 
 ```bash
-# Use different models
+# Example: Use different models
 export KOPILOT_MODEL_COST_EFFECTIVE="claude-3.5-sonnet"
 export KOPILOT_MODEL_PREMIUM="o1-preview"
 
@@ -64,7 +64,7 @@ export KOPILOT_MODEL_PREMIUM="o1-preview"
 ./bin/kopilot
 ```
 
-Supported models include: `gpt-4o`, `gpt-4o-mini`, `o1-preview`, `o1-mini`, `claude-3.5-sonnet`, and any other models available in your GitHub Copilot plan.
+Kopilot supports any model available in your GitHub Copilot plan, including: `gpt-4o`, `gpt-4o-mini`, `o1-preview`, `o1-mini`, `claude-3.5-sonnet`, and others.
 
 No API key configuration needed - authentication is handled through GitHub Copilot CLI.
 
@@ -186,10 +186,10 @@ See the [Execution Modes documentation](https://github.com/e9169/kopilot/blob/ma
 
 Kopilot automatically selects the optimal model based on your query:
 
-- **Simple queries** (list, status, health) → `gpt-4o-mini`
-- **Complex operations** (troubleshooting, scaling, debugging) → `gpt-4o`
+- **Simple queries** (list, status, health) → Cost-effective model (default: gpt-4o-mini)
+- **Complex operations** (troubleshooting, scaling, debugging) → Premium model (default: gpt-4o)
 
-This provides 50-70% cost reduction while maintaining quality for critical tasks.
+This provides 50-70% cost reduction while maintaining quality for critical tasks. You can customize which models are used via environment variables.
 
 See the [Model Selection documentation](https://github.com/e9169/kopilot/blob/main/docs/MODEL_SELECTION.md) for more details.
 
