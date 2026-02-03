@@ -47,6 +47,11 @@ temp/
 _site/
 website/_site/
 
+# Jekyll/Bundler
+website/vendor/
+website/.bundle/
+website/Gemfile.lock
+
 # Docker (not supported)
 Dockerfile*
 .dockerignore
@@ -59,3 +64,4 @@ Thumbs.db
 # Jekyll build outputs
 website/_site/
 website/.jekyll-cache/
+website/.sass-cache/

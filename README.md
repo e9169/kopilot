@@ -282,4 +282,4 @@ The agent will execute kubectl commands on your behalf and explain the results.
 
 ## License
 
-MIT License - Copyright © 2026 e9169
+MIT License - Copyright © 2026 Eneko Pérez
