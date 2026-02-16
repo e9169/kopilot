@@ -259,7 +259,11 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	if err != nil {
 		return err
 	}
-	defer client.Stop()
+	defer func() {
+		if err := client.Stop(); err != nil {
+			log.Printf("Warning: error stopping Copilot client: %v", err)
+		}
+	}()
 
 	// Create initial session with cost-effective model
 	session, err := createSessionWithModel(client, k8sProvider, state, modelCostEffective)
