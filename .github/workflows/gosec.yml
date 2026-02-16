@@ -24,6 +24,11 @@ jobs:
           cache: true
 
       - name: Run gosec
-        uses: securego/gosec@v2.22.11
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -fmt sarif -out gosec.sarif -no-fail ./...
+
+      - name: Upload gosec SARIF file
+        uses: github/codeql-action/upload-sarif@v4
         with:
-          args: "./..."
+          sarif_file: gosec.sarif
