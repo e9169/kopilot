@@ -1,6 +1,6 @@
 module github.com/e9169/kopilot
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/github/copilot-sdk/go v0.1.20
