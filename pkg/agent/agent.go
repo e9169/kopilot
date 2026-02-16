@@ -5,6 +5,7 @@ package agent
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
@@ -435,28 +436,28 @@ func createAndStartClient() (*copilot.Client, error) {
 	// Get current working directory for CLI context
 	cwd, _ := os.Getwd()
 
+	// Create boolean pointers for ClientOptions
+	autoStart := true
+	autoRestart := true
+	useStdio := true
+
 	client := copilot.NewClient(&copilot.ClientOptions{
 		CLIPath:     cliPath,
 		Cwd:         cwd,
-		UseStdio:    true,
-		AutoStart:   boolPtr(true),
-		AutoRestart: boolPtr(true),
+		UseStdio:    &useStdio,
+		AutoStart:   &autoStart,
+		AutoRestart: &autoRestart,
 		LogLevel:    "error",      // Reduce noise in logs
 		Env:         os.Environ(), // Pass current environment
 	})
 
 	log.Println("Starting Copilot client...")
-	if err := client.Start(); err != nil {
+	if err := client.Start(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to start copilot client: %w\n\nTip: Ensure GitHub Copilot CLI is properly set up and authenticated", err)
 	}
 
 	log.Println("Copilot client started successfully")
 	return client, nil
-}
-
-// boolPtr returns a pointer to a bool value
-func boolPtr(b bool) *bool {
-	return &b
 }
 
 // verifyCopilotCLI checks if the Copilot CLI is accessible and working
@@ -488,7 +489,7 @@ func createSessionWithModel(client *copilot.Client, k8sProvider *k8s.Provider, s
 	tools := defineTools(k8sProvider, state)
 	systemMessage := getSystemMessage()
 
-	session, err := client.CreateSession(&copilot.SessionConfig{
+	session, err := client.CreateSession(context.Background(), &copilot.SessionConfig{
 		Model: model,
 		Tools: tools,
 		SystemMessage: &copilot.SystemMessageConfig{
@@ -692,7 +693,7 @@ func interactiveLoopWithModelSelection(
 		// Send user message
 		*isIdle = false
 
-		_, err = currentSession.Send(copilot.MessageOptions{
+		_, err = currentSession.Send(context.Background(), copilot.MessageOptions{
 			Prompt: input,
 		})
 		if err != nil {
