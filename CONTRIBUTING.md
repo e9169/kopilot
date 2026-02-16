@@ -13,7 +13,7 @@ Thank you for your interest in contributing to Kopilot! This document provides g
 
 ### Prerequisites
 
-- Go 1.25 or later
+- Go 1.26 or later
 - GitHub Copilot CLI installed and authenticated
 - Access to a Kubernetes cluster for testing (optional)
 - Git
