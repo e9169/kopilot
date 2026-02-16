@@ -6,7 +6,7 @@
 [![CodeQL](https://github.com/e9169/kopilot/actions/workflows/codeql.yml/badge.svg)](https://github.com/e9169/kopilot/actions/workflows/codeql.yml)
 [![Release](https://github.com/e9169/kopilot/actions/workflows/release.yml/badge.svg)](https://github.com/e9169/kopilot/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev/doc/devel/release)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev/doc/devel/release)
 [![Go Report Card](https://goreportcard.com/badge/github.com/e9169/kopilot)](https://goreportcard.com/report/github.com/e9169/kopilot)
 [![Author](https://img.shields.io/badge/Author-@e9169-blue?logo=github)](https://github.com/e9169)
 [![Made in Sweden](https://img.shields.io/badge/Made%20in-Sweden-blue?logo=sweden)](https://github.com/e9169)
@@ -89,7 +89,7 @@ kopilot
 
 ## Prerequisites
 
-- **Go 1.25 or later** - For building from source
+- **Go 1.26 or later** - For building from source
 - **kubectl** - Kubernetes command-line tool
 - **GitHub Copilot CLI** - Version 0.0.350 or later (tested with 0.0.394)
 - **GitHub Copilot subscription** - Required for AI features
@@ -110,7 +110,7 @@ Run `go mod verify` to ensure dependency integrity.
 
 | Component | Minimum Version | Tested Version | Notes |
 |-----------|----------------|----------------|-------|
-| Go | 1.25.0 | 1.25.6 | Required for building |
+| Go | 1.26.0 | 1.26.0 | Required for building |
 | Copilot CLI | 0.0.350 | 0.0.394 | Auto-detected from PATH or VS Code |
 | Copilot SDK | v0.1.20 | v0.1.20 | Current version |
 | kubectl | Any | Latest | Must be in PATH |
