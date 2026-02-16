@@ -65,3 +65,4 @@ Thumbs.db
 website/_site/
 website/.jekyll-cache/
 website/.sass-cache/
+gosec.sarif
