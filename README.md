@@ -43,13 +43,15 @@ An interactive agent built with the **official GitHub Copilot SDK** in Go that p
 - 🔓 **Interactive Mode**: Confirmation prompts for write operations with clear visibility
 - ⚡ **Fast Health Checks**: Check all clusters in parallel with the check_all_clusters tool
 - 📋 **Pretty Output**: Markdown tables and structured formatting for easy reading
-- 💎 **Persistent Quota Display**: Real-time Copilot Premium request quota with color-coded indicators (see [docs/UI_ENHANCEMENTS.md](docs/UI_ENHANCEMENTS.md))
-- 🌈 **Animated Thinking Indicator**: Visual gradient animation while processing requests
+- 💎 **Persistent Quota Display**: Real-time Copilot Premium request quota with color-coded indicators
+- � **Modern ASCII Logo**: Stylized Kopilot branding with Kubernetes-themed colors (cyan/red)
+- 💡 **Dynamic Example Suggestions**: Shows 3 random example prompts on each launch to help users get started
 - 🎯 **Type-Safe Tools**: Uses Copilot SDK's DefineTool for automatic schema generation
 - 💰 **Smart Cost Optimization**: Intelligent model selection based on task complexity (see [docs/MODEL_SELECTION.md](docs/MODEL_SELECTION.md))
   - Uses `gpt-4o-mini` for simple queries (list, status, health checks)
   - Automatically upgrades to `gpt-4o` for troubleshooting and complex operations
   - 50-70% cost reduction while maintaining quality for critical tasks
+- 🚀 **GitHub Copilot CLI-inspired UX**: Clean, modern interface with chevron prompt (❯) and streamlined design
 
 ## Architecture
 
@@ -247,19 +249,23 @@ export KUBECONFIG="/path/to/custom/kubeconfig"
 
 ### Interactive Session
 
-When you start kopilot, it displays a welcome message with available capabilities.
+When you start kopilot, it displays:
+- An ASCII art logo with Kopilot branding
+- Connection status and cluster information
+- Current execution mode (read-only or interactive)
+- **3 random example prompts** to help you get started
 
 You can then interact naturally:
 
 ```bash
-> Show me pods in the default namespace on dev-mgmt-01
-> Scale the nginx deployment to 3 replicas in prod-wrk-01
-> Check the logs of the api pod in namespace apps
-> What's the status of nodes in the SEML region clusters?
-> exit
+❯ Show me pods in the default namespace on dev-mgmt-01
+❯ Scale the nginx deployment to 3 replicas in prod-wrk-01
+❯ Check the logs of the api pod in namespace apps
+❯ What's the status of nodes in the SEML region clusters?
+❯ exit
 ```
 
-The agent will execute kubectl commands on your behalf and explain the results.
+The agent will execute kubectl commands on your behalf and explain the results. Example prompts are randomized on each launch to help you discover different capabilities.
 
 ## Available Tools
 

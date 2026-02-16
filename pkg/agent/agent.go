@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,9 @@ import (
 	"github.com/e9169/kopilot/pkg/k8s"
 	copilot "github.com/github/copilot-sdk/go"
 )
+
+// Version information for display
+var AppVersion = "dev"
 
 // ExecutionMode defines how kubectl commands are executed
 type ExecutionMode int
@@ -42,24 +46,13 @@ const (
 	defaultModelPremium       = "gpt-4o"      // Premium model for complex tasks
 
 	// ANSI color codes
-	colorReset     = "\033[0m"
-	colorRed       = "\033[31m"
-	colorGreen     = "\033[32m"
-	colorYellow    = "\033[33m"
-	colorMagenta   = "\033[35m"
-	colorCyan      = "\033[36m"
-	colorBold      = "\033[1m"
-	colorDim       = "\033[2m"
-	gradientColor1 = "\033[38;5;51m"  // Bright cyan
-	gradientColor2 = "\033[38;5;45m"  // Cyan-blue
-	gradientColor3 = "\033[38;5;39m"  // Blue
-	gradientColor4 = "\033[38;5;69m"  // Blue-magenta
-	gradientColor5 = "\033[38;5;99m"  // Magenta
-	gradientColor6 = "\033[38;5;135m" // Light magenta
-
-	cursorHide = "\033[?25l"
-	cursorShow = "\033[?25h"
-	clearLine  = "\033[2K"
+	colorReset  = "\033[0m"
+	colorRed    = "\033[31m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorCyan   = "\033[36m"
+	colorBold   = "\033[1m"
+	colorDim    = "\033[2m"
 )
 
 const (
@@ -93,12 +86,10 @@ var readOnlyCommands = []string{
 
 // agentState holds the runtime state of the agent
 type agentState struct {
-	mode             ExecutionMode
-	outputFormat     OutputFormat
-	quotaPercentage  float64
-	quotaDisplayed   bool
-	isThinking       bool
-	thinkingStopChan chan bool
+	mode            ExecutionMode
+	outputFormat    OutputFormat
+	quotaPercentage float64
+	quotaDisplayed  bool
 }
 
 func isJSONOutput(format OutputFormat) bool {
@@ -147,165 +138,34 @@ func getAvailableContexts(k8sProvider *k8s.Provider) string {
 
 // getSystemMessage returns the system message for the Copilot session
 func getSystemMessage() string {
-	return `You are Kopilot, a helpful Kubernetes cluster operations assistant. Your role is to:
+	return `You are Kopilot, a Kubernetes cluster operations assistant.
 
-1. Monitor and manage Kubernetes clusters
-2. Execute kubectl commands on the user's behalf
-3. Check cluster health and report issues proactively
-4. Answer questions about cluster resources
-5. Perform operations like scaling, restarting pods, checking logs, etc.
+You help users:
+- Monitor and manage Kubernetes clusters
+- Execute kubectl commands
+- Check cluster health and diagnose issues
+- Answer questions about cluster resources
 
-When first started:
-- Use check_all_clusters tool (NOT individual get_cluster_status calls) for fast parallel health checking
-- Check BOTH node health AND pod health across all clusters
-- Report any unhealthy pods found (Failed, Pending, CrashLoopBackOff, etc.)
-- Provide a clear summary: either "All clusters are healthy ✓" or list specific issues found
-- Ask "What would you like me to do?" to prompt user interaction
+When presenting information:
+- Use clear, concise language
+- Show tool output directly without reformatting
+- Use markdown tables for structured data when appropriate
+- Add brief analysis or next steps when helpful
 
-For presenting information:
-- ALWAYS use Markdown tables for structured data (cluster comparisons, pod lists, node status, etc.)
-- Keep table cells SHORT and CONCISE (max 20 characters per cell)
-🚨 CRITICAL OUTPUT FORMATTING RULES 🚨
-
-TOOL OUTPUT HANDLING:
-- Present tool results VERBATIM - copy/paste without any changes
-- NEVER create markdown tables (| | | format) in your responses
-- NEVER reformat tool output into tables
-- Do NOT summarize, restructure, or re-present tool results
-- Tool output already has proper visual formatting (boxes, cards, emojis)
-- Just show the tool output as-is and add brief commentary BELOW it
-
-YOUR RESPONSE FORMAT:
-- Show tool output first (unmodified)
-- Add your analysis below using bullet points
-- Use emojis + UPPERCASE for section headers (no markdown, no ANSI codes):
-  * 🔵 STATUS:
-  * ⚠️  POSSIBLE CAUSES:
-  * ✅ NEXT STEPS:
-  * 💡 SUGGESTION:
-- Keep responses conversational and concise
-
-For user requests:
-- Use kubectl_exec tool to run kubectl commands when users ask for operations
-- Always use the --context flag to specify which cluster
+For kubectl operations:
+- Always specify the cluster context with --context flag
 - Explain what you're doing before executing commands
-- Show command output and interpret results for the user
+- Interpret command output for the user
 
-Be conversational, proactive, and helpful!`
+Be helpful, clear, and conversational.`
 }
 
-// startThinkingIndicator starts the animated gradient thinking line
-func startThinkingIndicator(state *agentState) {
-	if isJSONOutput(state.outputFormat) {
-		return
-	}
-
-	state.isThinking = true
-	state.thinkingStopChan = make(chan bool)
-
-	go func() {
-		colors := []string{
-			gradientColor1, gradientColor2, gradientColor3,
-			gradientColor4, gradientColor5, gradientColor6,
-		}
-		offset := 0
-		barWidth := 60
-
-		fmt.Print(cursorHide)       // Hide cursor during animation
-		defer fmt.Print(cursorShow) // Show cursor when done
-
-		for {
-			select {
-			case <-state.thinkingStopChan:
-				fmt.Print("\r" + clearLine) // Clear the line
-				return
-			default:
-				// Build gradient bar
-				fmt.Print("\r")
-				for i := 0; i < barWidth; i++ {
-					colorIdx := (i + offset) % len(colors)
-					// Bounds check to satisfy gosec (G602)
-					if colorIdx >= 0 && colorIdx < len(colors) {
-						fmt.Printf("%s━%s", colors[colorIdx], colorReset)
-					}
-				}
-				offset = (offset + 1) % len(colors)
-				fmt.Print("\r") // Move cursor back to start
-
-				// Sleep for animation frame
-				// Use a select to allow immediate cancellation
-				select {
-				case <-state.thinkingStopChan:
-					fmt.Print("\r" + clearLine)
-					return
-				case <-func() <-chan bool {
-					ch := make(chan bool)
-					go func() {
-						// 80ms delay for smooth animation
-						for i := 0; i < 8; i++ {
-							select {
-							case <-state.thinkingStopChan:
-								close(ch)
-								return
-							default:
-								// 10ms increments = 80ms total
-								// This allows faster response to stop signal
-								for j := 0; j < 1000000; j++ {
-									// Busy wait for ~10ms
-								}
-							}
-						}
-						close(ch)
-					}()
-					return ch
-				}():
-				}
-			}
-		}
-	}()
-}
-
-// stopThinkingIndicator stops the animated gradient thinking line
-func stopThinkingIndicator(state *agentState) {
-	if !state.isThinking {
-		return
-	}
-	if state.thinkingStopChan != nil {
-		close(state.thinkingStopChan)
-		state.thinkingStopChan = nil
-	}
-	state.isThinking = false
-}
-
-// displayPersistentQuota shows the quota information persistently
-func displayPersistentQuota(state *agentState) {
+// displayQuota shows quota information in GitHub Copilot CLI style
+func displayQuota(state *agentState) {
 	if isJSONOutput(state.outputFormat) || state.quotaPercentage < 0 {
 		return
 	}
-
-	statusIcon := getQuotaStatusIcon(state.quotaPercentage)
-	quotaColor := getQuotaColor(state.quotaPercentage)
-	fmt.Printf("%s[%s %s%.1f%% remaining%s]%s\n", colorDim, statusIcon, quotaColor, state.quotaPercentage, colorReset, colorReset)
-}
-
-// getQuotaStatusIcon returns the appropriate icon based on remaining percentage
-func getQuotaStatusIcon(percentage float64) string {
-	if percentage < 20 {
-		return "🔴"
-	} else if percentage < 50 {
-		return "🟡"
-	}
-	return "🟢"
-}
-
-// getQuotaColor returns the appropriate color based on remaining percentage
-func getQuotaColor(percentage float64) string {
-	if percentage < 20 {
-		return colorRed
-	} else if percentage < 50 {
-		return colorYellow
-	}
-	return colorGreen
+	fmt.Printf("%.0f%% of quota remaining\n", state.quotaPercentage)
 }
 
 // setupSessionEventHandler creates and returns an event handler for the session
@@ -313,55 +173,74 @@ func setupSessionEventHandler(session *copilot.Session, isIdlePtr *bool, state *
 	session.On(func(event copilot.SessionEvent) {
 		switch event.Type {
 		case "assistant.message_delta":
-			// Stop thinking indicator on first content
 			if event.Data.DeltaContent != nil && len(*event.Data.DeltaContent) > 0 {
-				stopThinkingIndicator(state)
-				// Show quota before first message if available
+				// Display quota before first content if available
 				if state.quotaDisplayed && messageBuffer.Len() == 0 {
-					displayPersistentQuota(state)
+					displayQuota(state)
+					state.quotaDisplayed = false // Only show once per response
 				}
 				fmt.Print(*event.Data.DeltaContent)
 				messageBuffer.WriteString(*event.Data.DeltaContent)
 			}
 		case "assistant.message":
-			stopThinkingIndicator(state)
 			if messageBuffer.Len() == 0 && event.Data.Content != nil {
-				// Show quota before message if available
+				// Display quota before message if available
 				if state.quotaDisplayed {
-					displayPersistentQuota(state)
+					displayQuota(state)
+					state.quotaDisplayed = false
 				}
 				fmt.Print(*event.Data.Content)
 			}
 			fmt.Println()
 			messageBuffer.Reset()
 		case "session.idle":
-			stopThinkingIndicator(state)
 			*isIdlePtr = true
 		case "assistant.usage":
-			handleUsageEvent(event, state)
-		case "tool.execution_start":
-			handleToolExecutionStart(event, state.outputFormat)
+			if event.Data.QuotaSnapshots != nil {
+				if snapshot, exists := event.Data.QuotaSnapshots["premium_interactions"]; exists {
+					if snapshot.RemainingPercentage >= 0 {
+						state.quotaPercentage = snapshot.RemainingPercentage
+						state.quotaDisplayed = true
+					}
+				}
+			}
 		}
 	})
 }
 
-// handleUsageEvent processes usage events and displays quota information
-func handleUsageEvent(event copilot.SessionEvent, state *agentState) {
-	if event.Data.QuotaSnapshots == nil {
-		return
+// getRandomExamples returns a random selection of example prompts
+func getRandomExamples(count int) []string {
+	examples := []string{
+		"Show me all my clusters",
+		"What's the health status of all clusters?",
+		"List all pods in the default namespace",
+		"Compare production and staging clusters",
+		"Check if all nodes are ready",
+		"Show me failing pods",
+		"Get status of cluster production",
+		"How many pods are running?",
+		"List all namespaces",
+		"Show me pod resource usage",
+		"Check health of all clusters in parallel",
+		"What version of Kubernetes am I running?",
+		"Show me recent events",
+		"List all services",
+		"Check node capacity",
+		"Show deployments in kube-system",
 	}
 
-	if snapshot, exists := event.Data.QuotaSnapshots["premium_interactions"]; exists {
-		if snapshot.RemainingPercentage >= 0 {
-			state.quotaPercentage = snapshot.RemainingPercentage
-			state.quotaDisplayed = true
-		}
-	}
-}
+	// Shuffle and select (Go 1.20+ automatically seeds the global RNG)
+	shuffled := make([]string, len(examples))
+	copy(shuffled, examples)
+	rand.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
 
-// handleToolExecutionStart displays tool execution notifications
-func handleToolExecutionStart(event copilot.SessionEvent, outputFormat OutputFormat) {
-	// Tool execution happens silently - output is shown when complete
+	if count > len(shuffled) {
+		count = len(shuffled)
+	}
+
+	return shuffled[:count]
 }
 
 // Run starts the Copilot agent with Kubernetes cluster tools
@@ -372,7 +251,6 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 		outputFormat:    outputFormat,
 		quotaPercentage: -1,
 		quotaDisplayed:  false,
-		isThinking:      false,
 	}
 
 	// Create and start Copilot client
@@ -399,30 +277,49 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	setupSessionEventHandler(session, &isIdle, state, &messageBuffer)
 
 	if !isJSONOutput(outputFormat) {
-		// Display welcome message without consuming quota
-		fmt.Printf("\n%s🚀 Kopilot - Kubernetes Cluster Assistant%s\n\n", colorBold+colorCyan, colorReset)
+		// ASCII art logo
+		fmt.Println()
+		fmt.Printf("%s  $    $$                       $     \"\"$$               $$           %s\n", colorCyan, colorReset)
+		fmt.Printf("%s  $  $$     #$$$    $ $$$     $$$       $$      $$$1   $$$$$$$   %s[))%s  \n", colorCyan, colorRed, colorReset)
+		fmt.Printf("%s  $$$$     $    $   $d   $      $       $$     $    $    $$      %s)))%s  \n", colorCyan, colorRed, colorReset)
+		fmt.Printf("%s  $   $    $    $[  $    $;     $       $$    $$    $    B$      %s)))%s  \n", colorCyan, colorRed, colorReset)
+		fmt.Printf("%s  $    $$   $$j$$   $$$|$$   $$$$$$$     $$$   $$\\$$      $$$$   %s)))%s  \n", colorCyan, colorRed, colorReset)
+		fmt.Printf("%s                    $                                            %s[))%s  \n", colorCyan, colorRed, colorReset)
+		fmt.Println()
+		fmt.Printf("               %sKubernetes Operations Assistant%s\n", colorDim, colorReset)
+		fmt.Printf("                         %s%s%s\n", colorDim, AppVersion, colorReset)
+		fmt.Println()
 
-		// Display execution mode
+		// Status messages with icons
+		clusters := k8sProvider.GetClusters()
+		currentCtx := k8sProvider.GetCurrentContext()
+		fmt.Printf("  %s●%s Connected to %d cluster(s)\n", colorGreen, colorReset, len(clusters))
+		if currentCtx != "" {
+			fmt.Printf("  %s●%s Active context: %s%s%s\n", colorCyan, colorReset, colorCyan, currentCtx, colorReset)
+		}
+
+		// Execution mode with icon
 		modeIcon := "🔒"
+		modeColor := colorYellow
+		modeText := "read-only"
 		if mode == ModeInteractive {
 			modeIcon = "🔓"
+			modeColor = colorGreen
+			modeText = "interactive"
 		}
-		fmt.Printf("%sExecution Mode:%s %s%s %s%s\n", colorDim, colorReset, modeIcon, colorBold, mode, colorReset)
-		fmt.Printf("%sModel:%s %s%s%s\n\n", colorDim, colorReset, colorBold, modelCostEffective, colorReset)
+		fmt.Printf("  %s●%s Mode: %s%s %s%s\n", modeColor, colorReset, modeIcon, modeColor, modeText, colorReset)
 
-		fmt.Printf("%sReady!%s\n\nI can help you with:\n", colorBold+colorGreen, colorReset)
-		fmt.Printf("  %s•%s Cluster health checks (try: %scheck all clusters%s)\n", colorGreen, colorReset, colorCyan, colorReset)
-		fmt.Printf("  %s•%s kubectl commands (try: %sshow me pods in default namespace%s)\n", colorGreen, colorReset, colorCyan, colorReset)
-		fmt.Printf("  %s•%s Troubleshooting (try: %swhy is my pod failing?%s)\n", colorGreen, colorReset, colorCyan, colorReset)
-
-		// Mode-specific instructions
-		if mode == ModeReadOnly {
-			fmt.Printf("\n%s⚠️  Read-only mode:%s Write operations are blocked. Use %s/interactive%s to enable writes.\n", colorYellow, colorReset, colorCyan, colorReset)
-		} else {
-			fmt.Printf("\n%s✓ Interactive mode:%s Write operations require confirmation. Use %s/readonly%s for read-only.\n", colorGreen, colorReset, colorCyan, colorReset)
+		// Show random example prompts
+		fmt.Println()
+		fmt.Printf("  %sTry asking:%s\n", colorDim, colorReset)
+		examples := getRandomExamples(3)
+		for _, example := range examples {
+			fmt.Printf("    %s•%s %s\"%s\"%s\n", colorCyan, colorReset, colorDim, example, colorReset)
 		}
 
-		fmt.Printf("\nType %s'exit'%s or %s'quit'%s to exit.\n\n", colorYellow, colorReset, colorYellow, colorReset)
+		fmt.Println()
+		fmt.Printf("  %sType your request to get started. Enter 'exit' to quit.%s\n", colorDim, colorReset)
+		fmt.Println()
 	}
 
 	// Mark as idle so user can start typing immediately
@@ -662,7 +559,7 @@ func waitForIdle(isIdle *bool) {
 
 // readUserInput reads and trims user input from stdin
 func readUserInput(reader *bufio.Reader) (string, error) {
-	fmt.Print("\n> ")
+	fmt.Print("❯ ")
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		return "", fmt.Errorf("error reading input: %w", err)
@@ -684,30 +581,30 @@ func handleModeSwitch(input string, state *agentState) bool {
 	switch lower {
 	case "/readonly", "/readonly on":
 		if state.mode == ModeReadOnly {
-			fmt.Printf("\n%sAlready in read-only mode%s\n", colorYellow, colorReset)
+			fmt.Printf("  %s●%s Already in read-only mode\n", colorYellow, colorReset)
 		} else {
 			state.mode = ModeReadOnly
-			fmt.Printf("\n%s🔒 Switched to read-only mode%s\n", colorGreen, colorReset)
-			fmt.Printf("Write operations are now blocked. Use %s/interactive%s to enable writes.\n", colorCyan, colorReset)
+			fmt.Printf("  %s●%s Switched to %s🔒 read-only%s mode\n", colorGreen, colorReset, colorYellow, colorReset)
 		}
 		return true
 
 	case "/interactive", "/interactive on":
 		if state.mode == ModeInteractive {
-			fmt.Printf("\n%sAlready in interactive mode%s\n", colorYellow, colorReset)
+			fmt.Printf("  %s●%s Already in interactive mode\n", colorYellow, colorReset)
 		} else {
 			state.mode = ModeInteractive
-			fmt.Printf("\n%s🔓 Switched to interactive mode%s\n", colorGreen, colorReset)
-			fmt.Printf("Write operations now require confirmation. Use %s/readonly%s for read-only mode.\n", colorCyan, colorReset)
+			fmt.Printf("  %s●%s Switched to %s🔓 interactive%s mode\n", colorGreen, colorReset, colorGreen, colorReset)
 		}
 		return true
 
 	case "/mode", "/status":
 		modeIcon := "🔒"
+		modeColor := colorYellow
 		if state.mode == ModeInteractive {
 			modeIcon = "🔓"
+			modeColor = colorGreen
 		}
-		fmt.Printf("\n%sCurrent execution mode:%s %s%s %s%s\n", colorDim, colorReset, modeIcon, colorBold, state.mode, colorReset)
+		fmt.Printf("  %s●%s Current mode: %s%s %s%s\n", modeColor, colorReset, modeIcon, modeColor, state.mode, colorReset)
 		return true
 	}
 
@@ -771,7 +668,7 @@ func interactiveLoopWithModelSelection(
 		}
 
 		if isExitCommand(input) {
-			fmt.Println("\nGoodbye! 👋")
+			fmt.Println("")
 			return nil
 		}
 
@@ -785,7 +682,6 @@ func interactiveLoopWithModelSelection(
 
 		// Switch model if needed
 		if optimalModel != currentModel {
-			log.Printf("%sSwitching from %s to %s for query complexity%s", colorMagenta, currentModel, optimalModel, colorReset)
 			currentSession, err = switchToModel(client, k8sProvider, state, currentSession, optimalModel, isIdle, messageBuffer)
 			if err != nil {
 				return err
@@ -796,14 +692,10 @@ func interactiveLoopWithModelSelection(
 		// Send user message
 		*isIdle = false
 
-		// Start thinking indicator
-		startThinkingIndicator(state)
-
 		_, err = currentSession.Send(copilot.MessageOptions{
 			Prompt: input,
 		})
 		if err != nil {
-			stopThinkingIndicator(state)
 			return fmt.Errorf("failed to send message: %w", err)
 		}
 	}

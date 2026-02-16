@@ -88,6 +88,9 @@ func main() {
 }
 
 func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, outputFormat agent.OutputFormat) error {
+	// Set version in agent package for display
+	agent.AppVersion = version
+
 	// Verify kubeconfig exists
 	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
 		return fmt.Errorf("kubeconfig not found at %s: %w", kubeconfigPath, err)
