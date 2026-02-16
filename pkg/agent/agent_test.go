@@ -528,6 +528,7 @@ func TestDefineToolsWithState(t *testing.T) {
 
 	if kubectlTool == nil {
 		t.Fatal("kubectl_exec tool not found")
+		return
 	}
 
 	if kubectlTool.Description == "" {

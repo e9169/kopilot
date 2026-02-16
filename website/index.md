@@ -100,6 +100,18 @@ make build
     <h3 style="background: linear-gradient(135deg, #06b6d4, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">GitHub Copilot SDK</h3>
     <p>Built with the official GitHub Copilot SDK for natural language interaction with your clusters.</p>
   </div>
+  
+  <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #14b8a6, #ec4899) border-box; border-radius: 0.5rem;">
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🎨</div>
+    <h3 style="background: linear-gradient(135deg, #14b8a6, #2dd4bf); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Modern Interface</h3>
+    <p>Clean ASCII logo with Kubernetes-themed colors and GitHub Copilot CLI-inspired UX with chevron prompt (❯).</p>
+  </div>
+  
+  <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #8b5cf6, #14b8a6) border-box; border-radius: 0.5rem;">
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">💡</div>
+    <h3 style="background: linear-gradient(135deg, #8b5cf6, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Smart Suggestions</h3>
+    <p>3 random example prompts shown on each launch to help you discover capabilities and get started quickly.</p>
+  </div>
 </div>
 
 ---

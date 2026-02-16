@@ -105,9 +105,9 @@ kopilot --interactive
 You can switch modes during a session without restarting:
 
 ```
-> /readonly          # Switch to read-only mode
-> /interactive       # Switch to interactive mode
-> /mode             # Show current mode
+❯ /readonly          # Switch to read-only mode
+❯ /interactive       # Switch to interactive mode
+❯ /mode             # Show current mode
 ```
 
 ### Example Session
@@ -124,8 +124,8 @@ Example queries:
 
 For write operations, switch to interactive mode:
 ```
-> /interactive
-> scale nginx deployment to 5 replicas
+❯ /interactive
+❯ scale nginx deployment to 5 replicas
 ⚠️  Write Operation: kubectl scale deployment nginx --replicas=5
 Do you want to proceed? (yes/no): yes
 ```
@@ -147,7 +147,12 @@ Kopilot can:
 Get AI-powered help with:
 - Pod crash loops
 - Scheduling issues
-- Networprovides two safety modes:
+- Network connectivity problems
+- Resource constraints
+
+### 🛡️ Execution Modes
+
+Kopilot provides two safety modes:
 
 **🔒 Read-Only Mode (Default)**
 - Blocks all write operations for maximum safety
@@ -193,15 +198,16 @@ This provides 50-70% cost reduction while maintaining quality for critical tasks
 
 See the [Model Selection documentation](https://github.com/e9169/kopilot/blob/main/docs/MODEL_SELECTION.md) for more details.
 
-### Execution Modes
+### User Interface
 
-Kopilot supports different execution modes:
+Kopilot features a modern GitHub Copilot CLI-inspired interface:
 
-- **Interactive** - Chat-based interface
-- **Command** - Single command execution
-- **Daemon** - Background monitoring
+- **ASCII Logo** - Stylized Kopilot branding on startup
+- **Dynamic Suggestions** - Random example prompts to help you get started
+- **Smart Prompts** - Clean ❯ prompt for intuitive interaction
+- **Color-Coded Status** - Visual indicators for health, quota, and modes
 
-See [Execution Modes](../docs/EXECUTION_MODES.md) for more details.
+The interface automatically displays your connection status, current execution mode, and helpful examples each time you start a session.
 
 ---
 
@@ -259,7 +265,7 @@ kopilot "export all configmaps in the production namespace"
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
+We welcome contributions! See [CONTRIBUTING.md](https://github.com/e9169/kopilot/blob/main/CONTRIBUTING.md) for guidelines.
 
 ## License
 
