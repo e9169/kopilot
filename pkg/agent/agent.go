@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/e9169/kopilot/pkg/k8s"
 	copilot "github.com/github/copilot-sdk/go"
@@ -254,8 +255,13 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 		quotaDisplayed:  false,
 	}
 
+	// Create a cancellable context for the entire agent lifecycle
+	// This allows graceful shutdown on Ctrl+C or other signals
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Create and start Copilot client
-	client, err := createAndStartClient()
+	client, err := createAndStartClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -266,7 +272,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	}()
 
 	// Create initial session with cost-effective model
-	session, err := createSessionWithModel(client, k8sProvider, state, modelCostEffective)
+	session, err := createSessionWithModel(ctx, client, k8sProvider, state, modelCostEffective)
 	if err != nil {
 		return err
 	}
@@ -331,7 +337,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	isIdle = true
 
 	// Interactive loop with session management
-	return interactiveLoopWithModelSelection(client, k8sProvider, state, session, &isIdle, &messageBuffer)
+	return interactiveLoopWithModelSelection(ctx, client, k8sProvider, state, session, &isIdle, &messageBuffer)
 }
 
 // findCopilotCLI attempts to locate the Copilot CLI executable
@@ -423,7 +429,7 @@ Searched locations:
 }
 
 // createAndStartClient creates and starts the Copilot client
-func createAndStartClient() (*copilot.Client, error) {
+func createAndStartClient(ctx context.Context) (*copilot.Client, error) {
 	// Auto-detect Copilot CLI location
 	cliPath, err := findCopilotCLI()
 	if err != nil {
@@ -438,7 +444,10 @@ func createAndStartClient() (*copilot.Client, error) {
 	}
 
 	// Get current working directory for CLI context
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current working directory: %w", err)
+	}
 
 	// Create boolean pointers for ClientOptions
 	autoStart := true
@@ -456,7 +465,7 @@ func createAndStartClient() (*copilot.Client, error) {
 	})
 
 	log.Println("Starting Copilot client...")
-	if err := client.Start(context.Background()); err != nil {
+	if err := client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("failed to start copilot client: %w\n\nTip: Ensure GitHub Copilot CLI is properly set up and authenticated", err)
 	}
 
@@ -489,11 +498,11 @@ func verifyCopilotCLI(cliPath string) error {
 }
 
 // createSessionWithModel creates a new Copilot session with specified model
-func createSessionWithModel(client *copilot.Client, k8sProvider *k8s.Provider, state *agentState, model string) (*copilot.Session, error) {
+func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProvider *k8s.Provider, state *agentState, model string) (*copilot.Session, error) {
 	tools := defineTools(k8sProvider, state)
 	systemMessage := getSystemMessage()
 
-	session, err := client.CreateSession(context.Background(), &copilot.SessionConfig{
+	session, err := client.CreateSession(ctx, &copilot.SessionConfig{
 		Model: model,
 		Tools: tools,
 		SystemMessage: &copilot.SystemMessageConfig{
@@ -618,6 +627,7 @@ func handleModeSwitch(input string, state *agentState) bool {
 
 // switchToModel switches to a different model by creating a new session
 func switchToModel(
+	ctx context.Context,
 	client *copilot.Client,
 	k8sProvider *k8s.Provider,
 	state *agentState,
@@ -632,7 +642,7 @@ func switchToModel(
 	}
 
 	// Create new session with optimal model
-	newSession, err := createSessionWithModel(client, k8sProvider, state, newModel)
+	newSession, err := createSessionWithModel(ctx, client, k8sProvider, state, newModel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new session: %w", err)
 	}
@@ -648,6 +658,7 @@ func switchToModel(
 
 // interactiveLoopWithModelSelection handles interactive conversation with dynamic model selection
 func interactiveLoopWithModelSelection(
+	ctx context.Context,
 	client *copilot.Client,
 	k8sProvider *k8s.Provider,
 	state *agentState,
@@ -687,19 +698,22 @@ func interactiveLoopWithModelSelection(
 
 		// Switch model if needed
 		if optimalModel != currentModel {
-			currentSession, err = switchToModel(client, k8sProvider, state, currentSession, optimalModel, isIdle, messageBuffer)
+			currentSession, err = switchToModel(ctx, client, k8sProvider, state, currentSession, optimalModel, isIdle, messageBuffer)
 			if err != nil {
 				return err
 			}
 			currentModel = optimalModel
 		}
 
-		// Send user message
+		// Send user message with timeout context
+		// Use a per-request timeout to prevent indefinite blocking
+		sendCtx, sendCancel := context.WithTimeout(ctx, 5*time.Minute)
 		*isIdle = false
 
-		_, err = currentSession.Send(context.Background(), copilot.MessageOptions{
+		_, err = currentSession.Send(sendCtx, copilot.MessageOptions{
 			Prompt: input,
 		})
+		sendCancel() // Clean up timeout context
 		if err != nil {
 			return fmt.Errorf("failed to send message: %w", err)
 		}
