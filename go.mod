@@ -3,7 +3,7 @@ module github.com/e9169/kopilot
 go 1.26.0
 
 require (
-	github.com/github/copilot-sdk/go v0.1.20
+	github.com/github/copilot-sdk/go v0.1.24
 	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
 	k8s.io/client-go v0.35.0
