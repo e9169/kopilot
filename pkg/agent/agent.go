@@ -468,7 +468,7 @@ func createAndStartClient(ctx context.Context) (*copilot.Client, error) {
 
 	log.Println("Starting Copilot client...")
 	if err := client.Start(ctx); err != nil {
-		return nil, fmt.Errorf("failed to start copilot client: %w\n\nTip: Ensure GitHub Copilot CLI is properly set up and authenticated.\nFor best compatibility, use CLI version 0.0.409 (SDK v0.1.24 requirement)", err)
+		return nil, fmt.Errorf("failed to start copilot client: %w\n\nTip: Ensure GitHub Copilot CLI is properly set up and authenticated.\nFor best compatibility, use CLI version 0.0.410 (SDK v0.1.23 requirement)", err)
 	}
 
 	log.Println("Copilot client started successfully")
@@ -486,10 +486,11 @@ func verifyCLIVersion(cliPath string) error {
 	version := strings.TrimSpace(string(output))
 	log.Printf("Copilot CLI version: %s", version)
 
-	// SDK v0.1.24 expects CLI v0.0.409
-	// Warn if version doesn't match
-	if !strings.Contains(version, "0.0.409") {
-		return fmt.Errorf("CLI version mismatch - SDK v0.1.24 expects v0.0.409 but found: %s.\nThis may cause compatibility issues. Consider using: npm install -g @github/copilot@0.0.409", version)
+	// SDK v0.1.23 works with CLI v0.0.410
+	// Just log a warning for informational purposes, don't block startup
+	if !strings.Contains(version, "0.0.410") && !strings.Contains(version, "0.0.409") {
+		log.Printf("Warning: CLI version may not be fully tested with SDK v0.1.23. Found: %s", version)
+		log.Printf("Recommended versions: CLI v0.0.410 (current) or v0.0.409")
 	}
 
 	return nil
