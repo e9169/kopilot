@@ -93,19 +93,19 @@ kopilot
 
 - **Go 1.26 or later** - For building from source
 - **kubectl** - Kubernetes command-line tool
-- **GitHub Copilot CLI** - Version **0.0.409** (strongly recommended for SDK v0.1.24 compatibility)
+- **GitHub Copilot CLI** - Version **0.0.410** (compatible with SDK v0.1.23)
 - **GitHub Copilot subscription** - Required for AI features
 - Access to Kubernetes clusters via kubeconfig
 - Valid kubeconfig file at `~/.kube/config` or set via `KUBECONFIG`
 
 > **⚠️ CLI Version Compatibility**
-> The GitHub Copilot SDK v0.1.24 expects CLI version **0.0.409**. If you have a different version (e.g., v0.0.410 bundled with VS Code), you may experience communication issues or deadlocks. Kopilot will detect version mismatches at startup and display a warning.
+> The GitHub Copilot SDK v0.1.23 is compatible with CLI version **0.0.410** (commonly bundled with VS Code). This version combination has been tested and works reliably.
 
 ### Dependencies
 
 This project uses the following key dependencies:
 
-- **GitHub Copilot SDK**: `github.com/github/copilot-sdk/go@v0.1.24`
+- **GitHub Copilot SDK**: `github.com/github/copilot-sdk/go@v0.1.23`
 - **Kubernetes Client**: `k8s.io/client-go@v0.35.1`
 - **Kubernetes API**: `k8s.io/api@v0.35.1`
 
@@ -116,8 +116,8 @@ Run `go mod verify` to ensure dependency integrity.
 | Component | Minimum Version | Recommended Version | Notes |
 |-----------|----------------|---------------------|-------|
 | Go | 1.26.0 | 1.26.0 | Required for building |
-| Copilot CLI | 0.0.350 | **0.0.409** | SDK v0.1.24 protocol compatibility |
-| Copilot SDK | v0.1.24 | v0.1.24 | Current version |
+| Copilot CLI | 0.0.350 | **0.0.410** | SDK v0.1.23 protocol compatibility |
+| Copilot SDK | v0.1.23 | v0.1.23 | Current version |
 | kubectl | Any | Latest | Must be in PATH |
 | Kubernetes | 1.28+ | 1.35.1 | API compatibility |
 
@@ -125,15 +125,18 @@ Run `go mod verify` to ensure dependency integrity.
 
 ### 1. Install Copilot CLI
 
-**⚠️ Important:** For best compatibility with Kopilot, install CLI version **0.0.409**:
+**✅ Recommended:** Kopilot works with CLI version **0.0.410** (commonly bundled with VS Code):
 
 ```bash
-# Install the specific compatible version
-npm install -g @github/copilot@0.0.409
+# Install via npm
+npm install -g @github/copilot@0.0.410
+
+# Or use the VS Code bundled version (usually at):
+# ~/.Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli/copilot (macOS)
 
 # Verify installation
 copilot --version
-# Should output: 0.0.409
+# Should output: GitHub Copilot CLI 0.0.410
 
 # Authenticate
 copilot auth login
@@ -141,10 +144,10 @@ copilot auth login
 
 **Alternative installation methods:**
 
-If you prefer using other package managers, note that they may install newer versions (like 0.0.410) which can cause communication issues with SDK v0.1.24. Kopilot will detect and warn about version mismatches.
+If you prefer using other package managers (Homebrew, etc.), they typically install the latest version which works fine with SDK v0.1.23.
 
 <details>
-<summary>Other installation options (may have version compatibility issues)</summary>
+<summary>Other installation options</summary>
 
 **Using Homebrew**
 ```bash
@@ -160,7 +163,7 @@ gh extension install github/gh-copilot
 **VS Code Extension**
 ```bash
 # Install GitHub Copilot extension in VS Code
-# Note: VS Code bundles v0.0.410 which has known compatibility issues
+# Note: VS Code bundles v0.0.410 which works perfectly with Kopilot
 ```
 
 </details>
