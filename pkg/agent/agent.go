@@ -432,26 +432,34 @@ Searched locations:
 
 // createAndStartClient creates and starts the Copilot client
 func createAndStartClient(ctx context.Context) (*copilot.Client, error) {
-	// Let the SDK handle CLI discovery and startup
-	// It will use embedded CLI if available, or search PATH
-	// SDK will auto-download compatible CL version if needed
-	
+	// Auto-detect Copilot CLI location from user's system
+	cliPath, err := findCopilotCLI()
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("Using Copilot CLI: %s", cliPath)
+
+	// Verify CLI version compatibility
+	if err := verifyCLIVersion(cliPath); err != nil {
+		log.Printf("Warning: %v", err)
+		// Continue anyway - user might have a compatible build
+	}
+
 	// Get current working directory for CLI context
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
-	// Use stdio mode for direct communication with CLI subprocess
-	// SDK v0.1.24 requires pointers for boolean options
-	useStdio := true
+	// Let SDK choose the best communication mode (defaults to stdio)
+	// Don't specify UseStdio - let SDK handle it
 	autoStart := true
 	autoRestart := true
 
 	client := copilot.NewClient(&copilot.ClientOptions{
-		// CLIPath is omitted - let SDK find or use embedded CLI
+		CLIPath:     cliPath,
 		Cwd:         cwd,
-		UseStdio:    &useStdio,
 		AutoStart:   &autoStart,
 		AutoRestart: &autoRestart,
 		LogLevel:    "error",      // Reduce noise in logs
@@ -460,34 +468,30 @@ func createAndStartClient(ctx context.Context) (*copilot.Client, error) {
 
 	log.Println("Starting Copilot client...")
 	if err := client.Start(ctx); err != nil {
-		return nil, fmt.Errorf("failed to start copilot client: %w\n\nTip: Ensure GitHub Copilot CLI is properly set up and authenticated", err)
+		return nil, fmt.Errorf("failed to start copilot client: %w\n\nTip: Ensure GitHub Copilot CLI is properly set up and authenticated.\nFor best compatibility, use CLI version 0.0.409 (SDK v0.1.24 requirement)", err)
 	}
 
 	log.Println("Copilot client started successfully")
 	return client, nil
 }
 
-// verifyCopilotCLI checks if the Copilot CLI is accessible and working
-func verifyCopilotCLI(cliPath string) error {
-	// Check if file exists and is executable
-	info, err := os.Stat(cliPath)
-	if err != nil {
-		return fmt.Errorf("CLI not accessible: %w", err)
-	}
-
-	// Check if it's executable (Unix-like systems)
-	if info.Mode().Perm()&0111 == 0 {
-		return fmt.Errorf("CLI is not executable: %s", cliPath)
-	}
-
-	// Try to run --version to verify it works
+// verifyCLIVersion checks if the CLI version is compatible with the SDK
+func verifyCLIVersion(cliPath string) error {
 	cmd := exec.Command(cliPath, "--version")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("CLI execution failed: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("unable to check CLI version: %w", err)
 	}
 
-	log.Printf("Copilot CLI version: %s", strings.TrimSpace(string(output)))
+	version := strings.TrimSpace(string(output))
+	log.Printf("Copilot CLI version: %s", version)
+
+	// SDK v0.1.24 expects CLI v0.0.409
+	// Warn if version doesn't match
+	if !strings.Contains(version, "0.0.409") {
+		return fmt.Errorf("CLI version mismatch - SDK v0.1.24 expects v0.0.409 but found: %s.\nThis may cause compatibility issues. Consider using: npm install -g @github/copilot@0.0.409", version)
+	}
+
 	return nil
 }
 
@@ -703,7 +707,7 @@ func interactiveLoopWithModelSelection(
 		// Use a per-request timeout to prevent indefinite blocking
 		*isIdle = false
 
-	_, err = currentSession.Send(ctx, copilot.MessageOptions{
+		_, err = currentSession.Send(ctx, copilot.MessageOptions{
 			Prompt: input,
 		})
 		if err != nil {
