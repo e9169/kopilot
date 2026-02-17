@@ -73,19 +73,20 @@ changelog:
     - title: Other Changes
       order: 999
 
-brews:
-  - repository:
-      owner: e9169
-      name: homebrew-tap
-      token: "{{ .Env.GITHUB_TOKEN }}"
-    directory: Formula
-    homepage: https://github.com/e9169/kopilot
-    description: "Kubernetes Cluster Status Agent powered by GitHub Copilot"
-    license: MIT
-    commit_author:
-      name: goreleaserbot
-      email: bot@goreleaser.com
-    install: |
-      bin.install "kopilot"
-    test: |
-      system "#{bin}/kopilot", "--version"
+# Homebrew formula publishing disabled - requires personal access token
+# brews:
+#   - repository:
+#       owner: e9169
+#       name: homebrew-tap
+#       token: "{{ .Env.GITHUB_TOKEN }}"
+#     directory: Formula
+#     homepage: https://github.com/e9169/kopilot
+#     description: "Kubernetes Cluster Status Agent powered by GitHub Copilot"
+#     license: MIT
+#     commit_author:
+#       name: goreleaserbot
+#       email: bot@goreleaser.com
+#     install: |
+#       bin.install "kopilot"
+#     test: |
+#       system "#{bin}/kopilot", "--version"
