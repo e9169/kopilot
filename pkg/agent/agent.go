@@ -432,48 +432,39 @@ Searched locations:
 
 // createAndStartClient creates and starts the Copilot client
 func createAndStartClient(ctx context.Context) (*copilot.Client, error) {
-	// Auto-detect Copilot CLI location
-	cliPath, err := findCopilotCLI()
-	if err != nil {
-		return nil, err
-	}
-
-	log.Printf("Using Copilot CLI: %s", cliPath)
-
-	// Skip CLI verification as it may interfere with SDK startup
-	// The SDK will handle authentication and version checks
-	// if err := verifyCopilotCLI(cliPath); err != nil {
-	// 	return nil, fmt.Errorf("copilot CLI verification failed: %w\n\nPlease ensure GitHub Copilot is properly authenticated.\nYou may need to run: copilot auth login", err)
-	// }
-
+	// Let the SDK handle CLI discovery and startup
+	// It will use embedded CLI if available, or search PATH
+	// SDK will auto-download compatible CL version if needed
+	
 	// Get current working directory for CLI context
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
+	// Use stdio mode for direct communication with CLI subprocess
+	// SDK v0.1.24 requires pointers for boolean options
+	useStdio := true
+	autoStart := true
+	autoRestart := true
+
 	client := copilot.NewClient(&copilot.ClientOptions{
-		CLIPath:     cliPath,
+		// CLIPath is omitted - let SDK find or use embedded CLI
 		Cwd:         cwd,
-		UseStdio:    true,
-		AutoStart:   boolPtr(true),
-		AutoRestart: boolPtr(true),
+		UseStdio:    &useStdio,
+		AutoStart:   &autoStart,
+		AutoRestart: &autoRestart,
 		LogLevel:    "error",      // Reduce noise in logs
 		Env:         os.Environ(), // Pass current environment
 	})
 
 	log.Println("Starting Copilot client...")
-	if err := client.Start(); err != nil {
+	if err := client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("failed to start copilot client: %w\n\nTip: Ensure GitHub Copilot CLI is properly set up and authenticated", err)
 	}
 
 	log.Println("Copilot client started successfully")
 	return client, nil
-}
-
-// boolPtr returns a pointer to a bool value
-func boolPtr(b bool) *bool {
-	return &b
 }
 
 // verifyCopilotCLI checks if the Copilot CLI is accessible and working
@@ -505,7 +496,7 @@ func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProv
 	tools := defineTools(k8sProvider, state)
 	systemMessage := getSystemMessage()
 
-	session, err := client.CreateSession(&copilot.SessionConfig{
+	session, err := client.CreateSession(ctx, &copilot.SessionConfig{
 		Model: model,
 		Tools: tools,
 		SystemMessage: &copilot.SystemMessageConfig{
@@ -712,7 +703,7 @@ func interactiveLoopWithModelSelection(
 		// Use a per-request timeout to prevent indefinite blocking
 		*isIdle = false
 
-		_, err = currentSession.Send( copilot.MessageOptions{
+	_, err = currentSession.Send(ctx, copilot.MessageOptions{
 			Prompt: input,
 		})
 		if err != nil {
