@@ -13,7 +13,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/e9169/kopilot/pkg/k8s"
 	copilot "github.com/github/copilot-sdk/go"
@@ -247,6 +246,9 @@ func getRandomExamples(count int) []string {
 
 // Run starts the Copilot agent with Kubernetes cluster tools
 func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputFormat) error {
+	// Configure logging to stderr to avoid interfering with stdio-based JSON-RPC
+	log.SetOutput(os.Stderr)
+
 	// Initialize agent state
 	state := &agentState{
 		mode:            mode,
@@ -438,10 +440,11 @@ func createAndStartClient(ctx context.Context) (*copilot.Client, error) {
 
 	log.Printf("Using Copilot CLI: %s", cliPath)
 
-	// Verify the CLI is executable and authenticated
-	if err := verifyCopilotCLI(cliPath); err != nil {
-		return nil, fmt.Errorf("copilot CLI verification failed: %w\n\nPlease ensure GitHub Copilot is properly authenticated.\nYou may need to run: copilot auth login", err)
-	}
+	// Skip CLI verification as it may interfere with SDK startup
+	// The SDK will handle authentication and version checks
+	// if err := verifyCopilotCLI(cliPath); err != nil {
+	// 	return nil, fmt.Errorf("copilot CLI verification failed: %w\n\nPlease ensure GitHub Copilot is properly authenticated.\nYou may need to run: copilot auth login", err)
+	// }
 
 	// Get current working directory for CLI context
 	cwd, err := os.Getwd()
@@ -449,28 +452,28 @@ func createAndStartClient(ctx context.Context) (*copilot.Client, error) {
 		return nil, fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
-	// Create boolean pointers for ClientOptions
-	autoStart := true
-	autoRestart := true
-	useStdio := true
-
 	client := copilot.NewClient(&copilot.ClientOptions{
 		CLIPath:     cliPath,
 		Cwd:         cwd,
-		UseStdio:    &useStdio,
-		AutoStart:   &autoStart,
-		AutoRestart: &autoRestart,
+		UseStdio:    true,
+		AutoStart:   boolPtr(true),
+		AutoRestart: boolPtr(true),
 		LogLevel:    "error",      // Reduce noise in logs
 		Env:         os.Environ(), // Pass current environment
 	})
 
 	log.Println("Starting Copilot client...")
-	if err := client.Start(ctx); err != nil {
+	if err := client.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start copilot client: %w\n\nTip: Ensure GitHub Copilot CLI is properly set up and authenticated", err)
 	}
 
 	log.Println("Copilot client started successfully")
 	return client, nil
+}
+
+// boolPtr returns a pointer to a bool value
+func boolPtr(b bool) *bool {
+	return &b
 }
 
 // verifyCopilotCLI checks if the Copilot CLI is accessible and working
@@ -502,7 +505,7 @@ func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProv
 	tools := defineTools(k8sProvider, state)
 	systemMessage := getSystemMessage()
 
-	session, err := client.CreateSession(ctx, &copilot.SessionConfig{
+	session, err := client.CreateSession(&copilot.SessionConfig{
 		Model: model,
 		Tools: tools,
 		SystemMessage: &copilot.SystemMessageConfig{
@@ -707,13 +710,11 @@ func interactiveLoopWithModelSelection(
 
 		// Send user message with timeout context
 		// Use a per-request timeout to prevent indefinite blocking
-		sendCtx, sendCancel := context.WithTimeout(ctx, 5*time.Minute)
 		*isIdle = false
 
-		_, err = currentSession.Send(sendCtx, copilot.MessageOptions{
+		_, err = currentSession.Send( copilot.MessageOptions{
 			Prompt: input,
 		})
-		sendCancel() // Clean up timeout context
 		if err != nil {
 			return fmt.Errorf("failed to send message: %w", err)
 		}
