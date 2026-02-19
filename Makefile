@@ -1,4 +1,4 @@
-.PHONY: help build run clean deps test fmt lint install
+.PHONY: help build bundle run clean deps test fmt lint install
 
 # Variables
 APP_NAME := kopilot
@@ -33,7 +33,12 @@ deps: ## Download and verify dependencies
 	$(GO) mod verify
 	@echo "Dependencies installed successfully"
 
-build: deps ## Build the application binary
+bundle: ## Download and embed the Copilot CLI binary for the current platform
+	@echo "Bundling Copilot CLI..."
+	$(GO) tool bundler
+	@echo "Copilot CLI bundled successfully"
+
+build: deps bundle ## Build the application binary
 	@echo "Building $(APP_NAME) v$(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(APP_NAME) .
@@ -127,6 +132,7 @@ clean: ## Clean build artifacts
 	@echo "Cleaning..."
 	@rm -rf $(BUILD_DIR)
 	@rm -f coverage.out coverage.html
+	@rm -f zcopilot_*
 	@echo "Clean complete"
 
 tidy: ## Tidy and verify Go modules

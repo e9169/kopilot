@@ -10,8 +10,6 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/e9169/kopilot/pkg/k8s"
@@ -342,158 +340,31 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	return interactiveLoopWithModelSelection(ctx, client, k8sProvider, state, session, &isIdle, &messageBuffer)
 }
 
-// findCopilotCLI attempts to locate the Copilot CLI executable
-func findCopilotCLI() (string, error) {
-	// 1. Check if 'copilot' is in PATH
-	if path, err := exec.LookPath("copilot"); err == nil {
-		log.Printf("Found copilot CLI in PATH: %s", path)
-		return path, nil
-	}
-
-	// 2. Check VS Code global storage (common location)
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		vscodeLocations := []string{
-			filepath.Join(homeDir, "Library", "Application Support", "Code", "User", "globalStorage", "github.copilot-chat", "copilotCli", "copilot"),
-			filepath.Join(homeDir, ".vscode", "extensions", "github.copilot-chat*", "copilotCli", "copilot"),
-			filepath.Join(homeDir, "AppData", "Roaming", "Code", "User", "globalStorage", "github.copilot-chat", "copilotCli", "copilot.exe"), // Windows
-		}
-
-		for _, location := range vscodeLocations {
-			// Handle glob patterns
-			if strings.Contains(location, "*") {
-				matches, _ := filepath.Glob(location)
-				for _, match := range matches {
-					if _, err := os.Stat(match); err == nil {
-						log.Printf("Found copilot CLI at: %s", match)
-						return match, nil
-					}
-				}
-			} else {
-				if _, err := os.Stat(location); err == nil {
-					log.Printf("Found copilot CLI at: %s", location)
-					return location, nil
-				}
-			}
-		}
-	}
-
-	// 3. Check common installation paths
-	commonPaths := []string{
-		"/usr/local/bin/copilot",
-		"/opt/homebrew/bin/copilot",
-		"/usr/bin/copilot",
-	}
-
-	for _, path := range commonPaths {
-		if _, err := os.Stat(path); err == nil {
-			log.Printf("Found copilot CLI at: %s", path)
-			return path, nil
-		}
-	}
-
-	// Build helpful error message with installation instructions
-	return "", buildCLINotFoundError()
-}
-
-// buildCLINotFoundError creates a detailed error message for missing CLI
-func buildCLINotFoundError() error {
-	msg := `GitHub Copilot CLI not found.
-
-To install GitHub Copilot CLI, choose one of the following methods:
-
-1. Using npm (recommended):
-   npm install -g @githubnext/github-copilot-cli
-
-2. Using Homebrew (macOS/Linux):
-   brew install github/gh-copilot/gh-copilot
-
-3. Using GitHub CLI extension:
-   gh extension install github/gh-copilot
-
-4. Download from VS Code:
-   Install the GitHub Copilot extension in VS Code - the CLI will be bundled.
-
-After installation, authenticate with:
-   copilot auth login
-
-For more information, visit:
-   https://docs.github.com/en/copilot/github-copilot-in-the-cli
-
-Searched locations:
-   - PATH environment variable
-   - VS Code global storage directories
-   - /usr/local/bin/copilot
-   - /opt/homebrew/bin/copilot
-   - /usr/bin/copilot`
-
-	return fmt.Errorf("%s", msg)
-}
-
-// createAndStartClient creates and starts the Copilot client
+// createAndStartClient creates and starts the Copilot client.
+// The SDK uses the embedded CLI binary (bundled via `go tool bundler`)
+// or falls back to the `copilot` CLI in PATH.
 func createAndStartClient(ctx context.Context) (*copilot.Client, error) {
-	// Auto-detect Copilot CLI location from user's system
-	cliPath, err := findCopilotCLI()
-	if err != nil {
-		return nil, err
-	}
-
-	log.Printf("Using Copilot CLI: %s", cliPath)
-
-	// Verify CLI version compatibility
-	if err := verifyCLIVersion(cliPath); err != nil {
-		log.Printf("Warning: %v", err)
-		// Continue anyway - user might have a compatible build
-	}
-
 	// Get current working directory for CLI context
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
-	// Let SDK choose the best communication mode (defaults to stdio)
-	// Don't specify UseStdio - let SDK handle it
-	autoStart := true
-	autoRestart := true
-
+	// Let the SDK auto-detect the CLI binary.
+	// The embedded CLI (from `go tool bundler`) takes priority,
+	// then COPILOT_CLI_PATH env var, then `copilot` in PATH.
 	client := copilot.NewClient(&copilot.ClientOptions{
-		CLIPath:     cliPath,
-		Cwd:         cwd,
-		AutoStart:   &autoStart,
-		AutoRestart: &autoRestart,
-		LogLevel:    "error",      // Reduce noise in logs
-		Env:         os.Environ(), // Pass current environment
+		Cwd:      cwd,
+		LogLevel: "error", // Reduce noise in logs
 	})
 
 	log.Println("Starting Copilot client...")
 	if err := client.Start(ctx); err != nil {
-		return nil, fmt.Errorf("failed to start copilot client: %w\n\nTip: Ensure GitHub Copilot CLI is properly set up and authenticated.\nFor best compatibility, use CLI version 0.0.410 (SDK v0.1.23 requirement)", err)
+		return nil, fmt.Errorf("failed to start copilot client: %w\n\nTip: Ensure GitHub Copilot CLI is properly set up and authenticated.\nRun 'go tool bundler' to embed the correct CLI version", err)
 	}
 
 	log.Println("Copilot client started successfully")
 	return client, nil
-}
-
-// verifyCLIVersion checks if the CLI version is compatible with the SDK
-func verifyCLIVersion(cliPath string) error {
-	cmd := exec.Command(cliPath, "--version")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("unable to check CLI version: %w", err)
-	}
-
-	version := strings.TrimSpace(string(output))
-	log.Printf("Copilot CLI version: %s", version)
-
-	// SDK v0.1.23 works with CLI v0.0.410
-	// Just log a warning for informational purposes, don't block startup
-	if !strings.Contains(version, "0.0.410") && !strings.Contains(version, "0.0.409") {
-		log.Printf("Warning: CLI version may not be fully tested with SDK v0.1.23. Found: %s", version)
-		log.Printf("Recommended versions: CLI v0.0.410 (current) or v0.0.409")
-	}
-
-	return nil
 }
 
 // createSessionWithModel creates a new Copilot session with specified model
@@ -502,8 +373,9 @@ func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProv
 	systemMessage := getSystemMessage()
 
 	session, err := client.CreateSession(ctx, &copilot.SessionConfig{
-		Model: model,
-		Tools: tools,
+		Model:     model,
+		Streaming: true,
+		Tools:     tools,
 		SystemMessage: &copilot.SystemMessageConfig{
 			Mode:    "append",
 			Content: systemMessage,
