@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 - Add interface screenshot to README showing kopilot startup screen
 
+## [0.2.2] - 2026-02-19
+
+### Fixed
+- Improve compatibility between the Copilot SDK and Copilot CLI integrations
+- Minor housekeeping and release preparation
+
+
 ## [0.2.1] - 2026-02-17
 
 ### Fixed
