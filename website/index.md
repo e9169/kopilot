@@ -47,20 +47,9 @@ copilot auth login
 kopilot
 ```
 
-<details style="margin-top: 1.5rem;">
-<summary style="cursor: pointer; color: #8b5cf6; font-weight: bold;">Alternative: Build from source</summary>
-<div style="padding: 1rem 0;">
-
-```bash
-git clone https://github.com/{{ site.repository }}.git
-cd kopilot
-make deps
-make build
-./bin/kopilot
-```
-
-</div>
-</details>
+<p style="text-align: center; margin-top: 2rem; font-size: 0.95rem;">
+  <a href="https://github.com/{{ site.repository }}/blob/main/docs/INSTALLATION.md" style="color: #8b5cf6; text-decoration: none;">→ View all installation methods (pre-built binaries, build from source, etc.)</a>
+</p>
 
 ---
 
