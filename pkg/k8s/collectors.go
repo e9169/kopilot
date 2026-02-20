@@ -88,18 +88,23 @@ func collectNamespaceList(ctx context.Context, clientset kubernetes.Interface) (
 
 // isPodHealthy checks if a pod is healthy
 func isPodHealthy(pod *corev1.Pod) bool {
-	if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodSucceeded {
-		return false
+	// Succeeded pods are completed jobs and should be considered healthy
+	if pod.Status.Phase == corev1.PodSucceeded {
+		return true
 	}
 
-	// Check if all containers are ready
-	for _, cs := range pod.Status.ContainerStatuses {
-		if !cs.Ready {
-			return false
+	// For running pods, check if all containers are ready
+	if pod.Status.Phase == corev1.PodRunning {
+		for _, cs := range pod.Status.ContainerStatuses {
+			if !cs.Ready {
+				return false
+			}
 		}
+		return true
 	}
 
-	return pod.Status.Phase == corev1.PodRunning
+	// All other phases (Pending, Failed, Unknown) are unhealthy
+	return false
 }
 
 // extractPodInfo extracts relevant information from an unhealthy pod

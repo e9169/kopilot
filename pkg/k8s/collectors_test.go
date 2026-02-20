@@ -231,7 +231,7 @@ func TestIsPodHealthy(t *testing.T) {
 			&corev1.Pod{
 				Status: corev1.PodStatus{Phase: corev1.PodSucceeded},
 			},
-			false,
+			true,
 		},
 	}
 
