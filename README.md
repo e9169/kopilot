@@ -76,6 +76,16 @@ Kopilot is compiled and released for:
 
 ## Quick Start
 
+**Quick install (recommended)**
+
+Install the latest release with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/e9169/kopilot/main/install.sh | bash
+```
+
+**Manual install**
+
 ```bash
 # Install dependencies
 make deps
