@@ -174,6 +174,25 @@ For more details, see: https://docs.github.com/en/copilot/github-copilot-in-the-
 
 ### 2. Install Kopilot
 
+
+**Quick install (recommended)**
+
+Install the latest release with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/e9169/kopilot/main/install.sh | bash
+```
+
+This will automatically:
+- Detect your OS and architecture
+- Download the latest release
+- Install to `/usr/local/bin` (or `~/.local/bin` if you prefer)
+- Make the binary executable
+
+**Pre-built binaries**
+
+Download pre-built binaries from the [releases page](https://github.com/e9169/kopilot/releases).
+
 **Build from source**
 ```bash
 git clone https://github.com/e9169/kopilot.git

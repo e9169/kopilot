@@ -4,6 +4,7 @@ This directory contains technical documentation for developers and contributors.
 
 ## Contents
 
+- **[INSTALLATION.md](INSTALLATION.md)** - Complete installation guide covering one-liner installer, manual installation, package managers, and troubleshooting
 - **[EXECUTION_MODES.md](EXECUTION_MODES.md)** - Execution mode system (read-only vs interactive) for safe kubectl operations
 - **[TESTING.md](TESTING.md)** - Comprehensive testing guide including test structure, coverage reports, and how to run tests
 - **[MODEL_SELECTION.md](MODEL_SELECTION.md)** - Intelligent model selection strategy for cost optimization (gpt-4o-mini vs gpt-4o)

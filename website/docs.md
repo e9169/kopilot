@@ -12,11 +12,33 @@ Kopilot is an AI-powered assistant for Kubernetes cluster management. This guide
 
 ### Installation
 
+#### Quick Install (Recommended)
+
+Install with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/e9169/kopilot/main/install.sh | bash
+```
+
+This will:
+- Auto-detect your OS and architecture (Linux, macOS, Windows)
+- Download the latest release from GitHub
+- Install to `/usr/local/bin` or `~/.local/bin`
+- Make the binary executable and ready to use
+
+**Supported platforms:** Linux (amd64, arm64), macOS (Intel, Apple Silicon), Windows (amd64, arm64)
+
+#### Pre-built Binaries
+
+Download from the [releases page](https://github.com/e9169/kopilot/releases).
+
 #### From Source
 
 ```bash
 git clone https://github.com/e9169/kopilot.git
 cd kopilot
+make deps
+make build
 make install
 ```
 

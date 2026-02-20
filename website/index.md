@@ -27,18 +27,29 @@ title: Home
 
 ## ⟩ Quick Start
 
-First, install GitHub Copilot CLI (choose one):
+<div style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(139, 92, 246, 0.1)); border: 2px solid #06b6d4; padding: 2rem; margin: 2rem 0; border-radius: 0.75rem; box-shadow: 0 4px 20px rgba(6, 182, 212, 0.2);">
+  <h3 style="margin-top: 0; color: #06b6d4; display: flex; align-items: center; gap: 0.5rem;"><span style="font-size: 1.5rem;">⚡</span> One-Line Install</h3>
+  <pre style="background: #0a0e14; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 1rem 0;"><code style="color: #06b6d4;">curl -fsSL https://raw.githubusercontent.com/e9169/kopilot/main/install.sh | bash</code></pre>
+  <p style="color: #d1d5db; margin: 0.5rem 0 0 0; font-size: 0.9rem;">✓ Auto-detects your OS and architecture<br>✓ Downloads latest release<br>✓ Installs to your PATH</p>
+</div>
+
+**Then install GitHub Copilot CLI:**
 
 ```bash
-# Option A: Using npm
-npm install -g @githubnext/github-copilot-cli
+# Install and authenticate Copilot CLI (required)
+npm install -g @github/copilot@0.0.410
 copilot auth login
-
-# Option B: Using GitHub CLI extension
-gh extension install github/gh-copilot
 ```
 
-Then build Kopilot from source:
+**Start using Kopilot:**
+
+```bash
+kopilot
+```
+
+<details style="margin-top: 1.5rem;">
+<summary style="cursor: pointer; color: #8b5cf6; font-weight: bold;">Alternative: Build from source</summary>
+<div style="padding: 1rem 0;">
 
 ```bash
 git clone https://github.com/{{ site.repository }}.git
@@ -47,6 +58,9 @@ make deps
 make build
 ./bin/kopilot
 ```
+
+</div>
+</details>
 
 ---
 
