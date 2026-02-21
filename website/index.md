@@ -8,7 +8,7 @@ title: Home
   <h1 style="font-size: 3rem; margin-bottom: 1rem; background: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 50%, #ec4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">AI KUBERNETES ASSISTANT</h1>
   <p style="font-size: 1.25rem; color: #d1d5db; margin-bottom: 2rem;">Deploy services, scale pods, debug issues, manage configs.<br>All from your terminal.</p>
   <a href="https://github.com/{{ site.repository }}" class="btn" style="background: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%); color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 0.5rem; display: inline-block; margin: 0.5rem; box-shadow: 0 4px 20px rgba(139, 92, 246, 0.5), 0 0 30px rgba(6, 182, 212, 0.3);">Get Started</a>
-  <a href="/kopilot/docs" class="btn" style="background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%); color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 0.5rem; display: inline-block; margin: 0.5rem; box-shadow: 0 4px 20px rgba(236, 72, 153, 0.5), 0 0 30px rgba(139, 92, 246, 0.3);">View Docs</a>
+  <a href="docs.md" class="btn" style="background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%); color: white; padding: 1rem 2rem; text-decoration: none; border-radius: 0.5rem; display: inline-block; margin: 0.5rem; box-shadow: 0 4px 20px rgba(236, 72, 153, 0.5), 0 0 30px rgba(139, 92, 246, 0.3);">View Docs</a>
 </div>
 
 <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(245, 158, 11, 0.1)); border-left: 4px solid #ef4444; padding: 1.5rem; margin: 2rem 0; border-radius: 0.5rem;">
