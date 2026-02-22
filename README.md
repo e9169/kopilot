@@ -1,4 +1,4 @@
-# Kopilot - Kubernetes Cluster Status Agent
+# Kopilot - Kubernetes AI Assistant
 
 [![CI](https://github.com/e9169/kopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/e9169/kopilot/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/e9169/kopilot/branch/main/graph/badge.svg)](https://codecov.io/gh/e9169/kopilot)
