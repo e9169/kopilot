@@ -9,15 +9,15 @@ echo ""
 
 # Check if kopilot is installed
 if ! command -v kopilot &> /dev/null; then
-    echo "❌ Error: kopilot not found in PATH"
-    echo "Install it with: make install"
+    echo "❌ Error: kopilot not found in PATH" >&2
+    echo "Install it with: make install" >&2
     exit 1
 fi
 
 # Check if kubeconfig exists
 KUBECONFIG_PATH="${KUBECONFIG:-$HOME/.kube/config}"
-if [ ! -f "$KUBECONFIG_PATH" ]; then
-    echo "❌ Error: kubeconfig not found at $KUBECONFIG_PATH"
+if [[ ! -f "$KUBECONFIG_PATH" ]]; then
+    echo "❌ Error: kubeconfig not found at $KUBECONFIG_PATH" >&2
     exit 1
 fi
 
