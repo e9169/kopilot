@@ -3,8 +3,24 @@ name: CI
 on:
   push:
     branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'website/**'
+      - 'examples/**'
+      - '.github/instructions/**'
+      - '.github/prompts/**'
+      - '.github/skills/**'
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'website/**'
+      - 'examples/**'
+      - '.github/instructions/**'
+      - '.github/prompts/**'
+      - '.github/skills/**'
 
 jobs:
   test:

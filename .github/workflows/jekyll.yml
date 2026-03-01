@@ -3,6 +3,9 @@ name: Deploy Jekyll site to Pages
 on:
   push:
     branches: ["main", "master"]
+    paths:
+      - 'website/**'
+      - '.github/workflows/jekyll.yml'
   workflow_dispatch:
 
 permissions:
