@@ -1,4 +1,6 @@
 ---
+name: SonarQube MCP instructions
+description: Guidelines for using the SonarQube MCP server tools, including analysis workflow and troubleshooting.
 applyTo: "**/*"
 ---
 
