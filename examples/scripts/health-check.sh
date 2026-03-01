@@ -10,7 +10,7 @@ echo ""
 # Check if kopilot is installed
 if ! command -v kopilot &> /dev/null; then
     echo "❌ Error: kopilot not found in PATH" >&2
-    echo "Install it with: make install"
+    echo "Install it with: make install" >&2
     exit 1
 fi
 
