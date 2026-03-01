@@ -374,9 +374,10 @@ func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProv
 	systemMessage := getSystemMessage()
 
 	session, err := client.CreateSession(ctx, &copilot.SessionConfig{
-		Model:     model,
-		Streaming: true,
-		Tools:     tools,
+		Model:               model,
+		Streaming:           true,
+		Tools:               tools,
+		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
 		SystemMessage: &copilot.SystemMessageConfig{
 			Mode:    "append",
 			Content: systemMessage,
