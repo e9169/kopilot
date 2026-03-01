@@ -1,8 +1,10 @@
 ---
+name: SonarQube MCP instructions
+description: Guidelines for using the SonarQube MCP server tools, including analysis workflow and troubleshooting.
 applyTo: "**/*"
 ---
 
-These are some guidelines when using the SonarQube MCP server.
+These are some guidelines for using the SonarQube MCP server.
 
 # Important Tool Guidelines
 
