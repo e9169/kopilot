@@ -105,19 +105,19 @@ kopilot
 
 - **Go 1.26 or later** - For building from source
 - **kubectl** - Kubernetes command-line tool
-- **GitHub Copilot CLI** - Version **0.0.410** (compatible with SDK v0.1.25)
+- **GitHub Copilot CLI** - Version **0.0.410** (compatible with SDK v0.1.29)
 - **GitHub Copilot subscription** - Required for AI features
 - Access to Kubernetes clusters via kubeconfig
 - Valid kubeconfig file at `~/.kube/config` or set via `KUBECONFIG`
 
 > **⚠️ CLI Version Compatibility**
-> The GitHub Copilot SDK v0.1.25 is compatible with CLI version **0.0.410** (commonly bundled with VS Code). This version combination has been tested and works reliably.
+> The GitHub Copilot SDK v0.1.29 is compatible with CLI version **0.0.410** (commonly bundled with VS Code). This version combination has been tested and works reliably.
 
 ### Dependencies
 
 This project uses the following key dependencies:
 
-- **GitHub Copilot SDK**: `github.com/github/copilot-sdk/go@v0.1.25`
+- **GitHub Copilot SDK**: `github.com/github/copilot-sdk/go@v0.1.29`
 - **Kubernetes Client**: `k8s.io/client-go@v0.35.2`
 - **Kubernetes API**: `k8s.io/api@v0.35.2`
 
@@ -128,8 +128,8 @@ Run `go mod verify` to ensure dependency integrity.
 | Component | Minimum Version | Recommended Version | Notes |
 |-----------|----------------|---------------------|-------|
 | Go | 1.26.0 | 1.26.0 | Required for building |
-| Copilot CLI | 0.0.350 | **0.0.410** | SDK v0.1.25 protocol compatibility |
-| Copilot SDK | v0.1.25 | v0.1.25 | Current version |
+| Copilot CLI | 0.0.350 | **0.0.410** | SDK v0.1.29 protocol compatibility |
+| Copilot SDK | v0.1.29 | v0.1.29 | Current version |
 | kubectl | Any | Latest | Must be in PATH |
 | Kubernetes | 1.28+ | 1.35.2 | API compatibility |
 
@@ -156,7 +156,7 @@ copilot auth login
 
 **Alternative installation methods:**
 
-If you prefer using other package managers (Homebrew, etc.), they typically install the latest version which works fine with SDK v0.1.25.
+If you prefer using other package managers (Homebrew, etc.), they typically install the latest version which works fine with SDK v0.1.29.
 
 <details>
 <summary>Other installation options</summary>
