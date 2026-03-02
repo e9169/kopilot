@@ -55,6 +55,7 @@ changelog:
       - '^docs:'
       - '^test:'
       - '^chore:'
+      - '^style:'
       - 'Merge pull request'
       - 'Merge branch'
   groups:
@@ -70,6 +71,9 @@ changelog:
     - title: Refactors
       regexp: '^refactor:'
       order: 3
+    - title: Dependencies
+      regexp: '^build(\(deps\))?:'
+      order: 4
     - title: Other Changes
       order: 999
 
