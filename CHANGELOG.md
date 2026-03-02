@@ -7,8 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-03-02
+
+### Changed
+- Upgrade `github.com/github/copilot-sdk/go` from v0.1.25 to v0.1.29
+- Bump `k8s.io/client-go`, `k8s.io/api`, `k8s.io/apimachinery` from 0.35.1 to 0.35.2
+- Bump `github.com/klauspost/compress` from 1.18.3 to 1.18.4 (promoted to direct dependency)
+- Bump `goreleaser/goreleaser-action` from 6 to 7
+- Bump `actions/upload-artifact` from 6 to 7
+- Skip CI workflows on documentation-only changes
+
 ### Documentation
 - Add interface screenshot to README showing kopilot startup screen
+- Align SDK version references with go.mod
+
+## [0.2.3] - 2026-02-20
+
+### Added
+- Quick installation method and detailed installation guide
+
+### Fixed
+- Update `isPodHealthy` to consider Succeeded pods as healthy
 
 ## [0.2.2] - 2026-02-19
 
