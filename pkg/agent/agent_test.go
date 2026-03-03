@@ -15,6 +15,7 @@ import (
 
 const (
 	errToolDescriptionEmpty = "Tool description is empty"
+	errToolNameFormat       = "Tool name = %s, want %s"
 )
 
 func TestDefineTools(t *testing.T) {
@@ -59,7 +60,7 @@ func TestListClustersTool(t *testing.T) {
 	tool := defineListClustersTool(provider, state)
 
 	if tool.Name != toolListClusters {
-		t.Errorf("Tool name = %s, want %s", tool.Name, toolListClusters)
+		t.Errorf(errToolNameFormat, tool.Name, toolListClusters)
 	}
 
 	if tool.Description == "" {
@@ -106,7 +107,7 @@ func TestGetClusterStatusTool(t *testing.T) {
 	tool := defineGetClusterStatusTool(provider, state)
 
 	if tool.Name != toolGetClusterStatus {
-		t.Errorf("Tool name = %s, want %s", tool.Name, toolGetClusterStatus)
+		t.Errorf(errToolNameFormat, tool.Name, toolGetClusterStatus)
 	}
 
 	tests := []struct {
@@ -148,7 +149,7 @@ func TestCompareClustersTool(t *testing.T) {
 	tool := defineCompareClustersTool(provider, state)
 
 	if tool.Name != toolCompareClusters {
-		t.Errorf("Tool name = %s, want %s", tool.Name, toolCompareClusters)
+		t.Errorf(errToolNameFormat, tool.Name, toolCompareClusters)
 	}
 
 	if tool.Description == "" {
