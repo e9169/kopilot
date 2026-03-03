@@ -1,240 +1,89 @@
 package agent
 
 import (
+	"fmt"
 	"testing"
 )
 
+// TestSelectModelForQuery tests model selection for AgentDefault with various query types.
+// Specialist agent behaviour is covered by TestSpecialistAgentsAlwaysUsePremiumModel.
 func TestSelectModelForQuery(t *testing.T) {
 	tests := []struct {
 		name          string
 		query         string
-		agentType     AgentType
 		expectedModel string
 	}{
-		// Simple queries with default agent - should use cost-effective model
-		{
-			name:          "list clusters",
-			query:         "list all clusters",
-			agentType:     AgentDefault,
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "show status",
-			query:         "show me the status of my pods",
-			agentType:     AgentDefault,
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "get resources",
-			query:         "get all namespaces",
-			agentType:     AgentDefault,
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "check health",
-			query:         "check the health of the cluster",
-			agentType:     AgentDefault,
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "what query",
-			query:         "what pods are running?",
-			agentType:     AgentDefault,
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "describe resource",
-			query:         "describe the deployment",
-			agentType:     AgentDefault,
-			expectedModel: modelCostEffective,
-		},
+		// Simple queries - should use cost-effective model
+		{"list clusters", "list all clusters", modelCostEffective},
+		{"show status", "show me the status of my pods", modelCostEffective},
+		{"get resources", "get all namespaces", modelCostEffective},
+		{"check health", "check the health of the cluster", modelCostEffective},
+		{"what query", "what pods are running?", modelCostEffective},
+		{"describe resource", "describe the deployment", modelCostEffective},
+		{"ambiguous query", "tell me about kubernetes", modelCostEffective},
+		{"general question", "how are things looking?", modelCostEffective},
 
-		// Troubleshooting queries with default agent - should use premium model
-		{
-			name:          "why question",
-			query:         "why is my pod not starting?",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "troubleshoot issue",
-			query:         "troubleshoot the connection problem",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "debug error",
-			query:         "debug this error",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "investigate failure",
-			query:         "investigate why the service failed",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "fix problem",
-			query:         "help me fix this broken deployment",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "explain issue",
-			query:         "explain why this is not working",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "diagnose crash",
-			query:         "diagnose the crash loop",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "analyze problem",
-			query:         "analyze this issue for me",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
+		// Troubleshooting queries - should use premium model
+		{"why question", "why is my pod not starting?", modelPremium},
+		{"troubleshoot issue", "troubleshoot the connection problem", modelPremium},
+		{"debug error", "debug this error", modelPremium},
+		{"investigate failure", "investigate why the service failed", modelPremium},
+		{"fix problem", "help me fix this broken deployment", modelPremium},
+		{"explain issue", "explain why this is not working", modelPremium},
+		{"diagnose crash", "diagnose the crash loop", modelPremium},
+		{"analyze problem", "analyze this issue for me", modelPremium},
 
-		// Complex kubectl operations with default agent - should use premium model
-		{
-			name:          "scale deployment",
-			query:         "scale the deployment to 5 replicas",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "restart pods",
-			query:         "restart the pods in default namespace",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "delete resource",
-			query:         "delete the failed pod",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "apply manifest",
-			query:         "apply the new configuration",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "patch deployment",
-			query:         "patch the deployment with new image",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "rollback",
-			query:         "rollback the last deployment",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "drain node",
-			query:         "drain the worker node",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "cordon node",
-			query:         "cordon the node for maintenance",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
+		// Complex kubectl operations - should use premium model
+		{"scale deployment", "scale the deployment to 5 replicas", modelPremium},
+		{"restart pods", "restart the pods in default namespace", modelPremium},
+		{"delete resource", "delete the failed pod", modelPremium},
+		{"apply manifest", "apply the new configuration", modelPremium},
+		{"patch deployment", "patch the deployment with new image", modelPremium},
+		{"rollback", "rollback the last deployment", modelPremium},
+		{"drain node", "drain the worker node", modelPremium},
+		{"cordon node", "cordon the node for maintenance", modelPremium},
 
-		// Default case with default agent - ambiguous queries should use cost-effective
-		{
-			name:          "ambiguous query",
-			query:         "tell me about kubernetes",
-			agentType:     AgentDefault,
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "general question",
-			query:         "how are things looking?",
-			agentType:     AgentDefault,
-			expectedModel: modelCostEffective,
-		},
-
-		// Mixed keywords with default agent - troubleshooting takes precedence
-		{
-			name:          "list with error",
-			query:         "list pods with error status",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "show failed",
-			query:         "show me all failed deployments",
-			agentType:     AgentDefault,
-			expectedModel: modelPremium,
-		},
-
-		// Specialist agents always use premium model, regardless of query text
-		{
-			name:          "debugger simple query",
-			query:         "show me all pods",
-			agentType:     AgentDebugger,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "debugger list query",
-			query:         "list events",
-			agentType:     AgentDebugger,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "security simple query",
-			query:         "get service accounts",
-			agentType:     AgentSecurity,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "security check query",
-			query:         "check network policies",
-			agentType:     AgentSecurity,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "optimizer show query",
-			query:         "show resource usage",
-			agentType:     AgentOptimizer,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "optimizer ambiguous query",
-			query:         "how are things looking?",
-			agentType:     AgentOptimizer,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "gitops status query",
-			query:         "status of all kustomizations",
-			agentType:     AgentGitOps,
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "gitops list query",
-			query:         "list helm releases",
-			agentType:     AgentGitOps,
-			expectedModel: modelPremium,
-		},
+		// Mixed keywords - troubleshooting takes precedence over simple keywords
+		{"list with error", "list pods with error status", modelPremium},
+		{"show failed", "show me all failed deployments", modelPremium},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := selectModelForQuery(tt.query, tt.agentType)
+			result := selectModelForQuery(tt.query, AgentDefault)
 			if result != tt.expectedModel {
-				t.Errorf("selectModelForQuery(%q, %q) = %q, want %q", tt.query, tt.agentType, result, tt.expectedModel)
+				t.Errorf("selectModelForQuery(%q, AgentDefault) = %q, want %q", tt.query, result, tt.expectedModel)
 			}
 		})
+	}
+}
+
+// TestSpecialistAgentsAlwaysUsePremiumModel verifies that all specialist agent
+// types always select the premium model regardless of query complexity.
+func TestSpecialistAgentsAlwaysUsePremiumModel(t *testing.T) {
+	specialistAgents := []AgentType{AgentDebugger, AgentSecurity, AgentOptimizer, AgentGitOps}
+
+	// Representative queries spanning simple, ambiguous, and complex prompts.
+	queries := []string{
+		"list events",
+		"show me all pods",
+		"get service accounts",
+		"how are things looking?",
+		"check network policies",
+		"show resource usage",
+		"status of all kustomizations",
+		"list helm releases",
+	}
+
+	for _, agent := range specialistAgents {
+		for _, query := range queries {
+			t.Run(fmt.Sprintf("%s/%s", agent, query), func(t *testing.T) {
+				result := selectModelForQuery(query, agent)
+				if result != modelPremium {
+					t.Errorf("selectModelForQuery(%q, %q) = %q, want %q", query, agent, result, modelPremium)
+				}
+			})
+		}
 	}
 }
 
