@@ -33,6 +33,7 @@ func main() {
 	kubeconfig := flag.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file (default: $KUBECONFIG or ~/.kube/config)")
 	contextName := flag.String("context", "", "Override kubeconfig context")
 	outputFormat := flag.String("output", string(agent.OutputText), "Output format: text or json")
+	agentName := flag.String("agent", string(agent.AgentDefault), "Specialist agent persona: default, debugger, security, optimizer, gitops")
 	flag.BoolVar(verbose, "v", false, "Enable verbose logging (shorthand)")
 
 	flag.Usage = func() {
@@ -44,15 +45,27 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\nExecution Modes:\n")
 		fmt.Fprintf(os.Stderr, "  Read-only (default): Blocks all write operations for safety\n")
 		fmt.Fprintf(os.Stderr, "  Interactive (--interactive): Asks for confirmation before write operations\n")
+		fmt.Fprintf(os.Stderr, "\nSpecialist Agents:\n")
+		fmt.Fprintf(os.Stderr, "  default    Standard Kopilot persona\n")
+		fmt.Fprintf(os.Stderr, "  debugger   Root cause analysis and pod failure diagnosis\n")
+		fmt.Fprintf(os.Stderr, "  security   RBAC auditing and privilege escalation detection\n")
+		fmt.Fprintf(os.Stderr, "  optimizer  Resource right-sizing and cost optimization\n")
+		fmt.Fprintf(os.Stderr, "  gitops     Flux/ArgoCD sync status and drift detection\n")
 		fmt.Fprintf(os.Stderr, "\nRuntime Commands:\n")
 		fmt.Fprintf(os.Stderr, "  /readonly          Switch to read-only mode\n")
 		fmt.Fprintf(os.Stderr, "  /interactive       Switch to interactive mode\n")
 		fmt.Fprintf(os.Stderr, "  /mode              Show current execution mode\n")
+		fmt.Fprintf(os.Stderr, "  /agent             Show active agent and available agents\n")
+		fmt.Fprintf(os.Stderr, "  /agent <name>      Switch to a different specialist agent\n")
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
 		fmt.Fprintf(os.Stderr, "  KUBECONFIG    Path to kubeconfig file (default: ~/.kube/config)\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  kopilot                          # Start in read-only mode\n")
 		fmt.Fprintf(os.Stderr, "  kopilot --interactive            # Start in interactive mode\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --agent debugger         # Start as debugging specialist\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --agent security         # Start as security auditor\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --agent optimizer        # Start as optimization specialist\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --agent gitops           # Start as GitOps specialist\n")
 		fmt.Fprintf(os.Stderr, "  kopilot -v                       # Start with verbose logging\n")
 		fmt.Fprintf(os.Stderr, "  KUBECONFIG=./custom kopilot      # Use custom kubeconfig\n")
 	}
@@ -82,12 +95,17 @@ func main() {
 		log.Fatalf("Invalid --output value: %s (use 'text' or 'json')", *outputFormat)
 	}
 
-	if err := run(mode, *kubeconfig, *contextName, format); err != nil {
+	agentType, agentErr := agent.ParseAgentType(*agentName)
+	if agentErr != nil {
+		log.Fatalf("Invalid --agent value: %v", agentErr)
+	}
+
+	if err := run(mode, *kubeconfig, *contextName, format, agentType); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
 }
 
-func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, outputFormat agent.OutputFormat) error {
+func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, outputFormat agent.OutputFormat, agentType agent.AgentType) error {
 	// Set version in agent package for display
 	agent.AppVersion = version
 
@@ -115,7 +133,7 @@ func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, ou
 
 	// Initialize and run the agent
 	log.Println("Starting kopilot agent...")
-	if err := agent.Run(k8sProvider, mode, outputFormat); err != nil {
+	if err := agent.Run(k8sProvider, mode, outputFormat, agentType); err != nil {
 		return fmt.Errorf("failed to run agent: %w", err)
 	}
 

@@ -1,9 +1,12 @@
 package agent
 
 import (
+	"fmt"
 	"testing"
 )
 
+// TestSelectModelForQuery tests model selection for AgentDefault with various query types.
+// Specialist agent behaviour is covered by TestSpecialistAgentsAlwaysUsePremiumModel.
 func TestSelectModelForQuery(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -11,153 +14,76 @@ func TestSelectModelForQuery(t *testing.T) {
 		expectedModel string
 	}{
 		// Simple queries - should use cost-effective model
-		{
-			name:          "list clusters",
-			query:         "list all clusters",
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "show status",
-			query:         "show me the status of my pods",
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "get resources",
-			query:         "get all namespaces",
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "check health",
-			query:         "check the health of the cluster",
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "what query",
-			query:         "what pods are running?",
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "describe resource",
-			query:         "describe the deployment",
-			expectedModel: modelCostEffective,
-		},
+		{"list clusters", "list all clusters", modelCostEffective},
+		{"show status", "show me the status of my pods", modelCostEffective},
+		{"get resources", "get all namespaces", modelCostEffective},
+		{"check health", "check the health of the cluster", modelCostEffective},
+		{"what query", "what pods are running?", modelCostEffective},
+		{"describe resource", "describe the deployment", modelCostEffective},
+		{"ambiguous query", "tell me about kubernetes", modelCostEffective},
+		{"general question", "how are things looking?", modelCostEffective},
 
 		// Troubleshooting queries - should use premium model
-		{
-			name:          "why question",
-			query:         "why is my pod not starting?",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "troubleshoot issue",
-			query:         "troubleshoot the connection problem",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "debug error",
-			query:         "debug this error",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "investigate failure",
-			query:         "investigate why the service failed",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "fix problem",
-			query:         "help me fix this broken deployment",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "explain issue",
-			query:         "explain why this is not working",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "diagnose crash",
-			query:         "diagnose the crash loop",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "analyze problem",
-			query:         "analyze this issue for me",
-			expectedModel: modelPremium,
-		},
+		{"why question", "why is my pod not starting?", modelPremium},
+		{"troubleshoot issue", "troubleshoot the connection problem", modelPremium},
+		{"debug error", "debug this error", modelPremium},
+		{"investigate failure", "investigate why the service failed", modelPremium},
+		{"fix problem", "help me fix this broken deployment", modelPremium},
+		{"explain issue", "explain why this is not working", modelPremium},
+		{"diagnose crash", "diagnose the crash loop", modelPremium},
+		{"analyze problem", "analyze this issue for me", modelPremium},
 
 		// Complex kubectl operations - should use premium model
-		{
-			name:          "scale deployment",
-			query:         "scale the deployment to 5 replicas",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "restart pods",
-			query:         "restart the pods in default namespace",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "delete resource",
-			query:         "delete the failed pod",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "apply manifest",
-			query:         "apply the new configuration",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "patch deployment",
-			query:         "patch the deployment with new image",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "rollback",
-			query:         "rollback the last deployment",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "drain node",
-			query:         "drain the worker node",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "cordon node",
-			query:         "cordon the node for maintenance",
-			expectedModel: modelPremium,
-		},
+		{"scale deployment", "scale the deployment to 5 replicas", modelPremium},
+		{"restart pods", "restart the pods in default namespace", modelPremium},
+		{"delete resource", "delete the failed pod", modelPremium},
+		{"apply manifest", "apply the new configuration", modelPremium},
+		{"patch deployment", "patch the deployment with new image", modelPremium},
+		{"rollback", "rollback the last deployment", modelPremium},
+		{"drain node", "drain the worker node", modelPremium},
+		{"cordon node", "cordon the node for maintenance", modelPremium},
 
-		// Default case - ambiguous queries should use cost-effective
-		{
-			name:          "ambiguous query",
-			query:         "tell me about kubernetes",
-			expectedModel: modelCostEffective,
-		},
-		{
-			name:          "general question",
-			query:         "how are things looking?",
-			expectedModel: modelCostEffective,
-		},
-
-		// Mixed keywords - troubleshooting takes precedence
-		{
-			name:          "list with error",
-			query:         "list pods with error status",
-			expectedModel: modelPremium,
-		},
-		{
-			name:          "show failed",
-			query:         "show me all failed deployments",
-			expectedModel: modelPremium,
-		},
+		// Mixed keywords - troubleshooting takes precedence over simple keywords
+		{"list with error", "list pods with error status", modelPremium},
+		{"show failed", "show me all failed deployments", modelPremium},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := selectModelForQuery(tt.query)
+			result := selectModelForQuery(tt.query, AgentDefault)
 			if result != tt.expectedModel {
-				t.Errorf("selectModelForQuery(%q) = %q, want %q", tt.query, result, tt.expectedModel)
+				t.Errorf("selectModelForQuery(%q, AgentDefault) = %q, want %q", tt.query, result, tt.expectedModel)
 			}
 		})
+	}
+}
+
+// TestSpecialistAgentsAlwaysUsePremiumModel verifies that all specialist agent
+// types always select the premium model regardless of query complexity.
+func TestSpecialistAgentsAlwaysUsePremiumModel(t *testing.T) {
+	specialistAgents := []AgentType{AgentDebugger, AgentSecurity, AgentOptimizer, AgentGitOps}
+
+	// Representative queries spanning simple, ambiguous, and complex prompts.
+	queries := []string{
+		"list events",
+		"show me all pods",
+		"get service accounts",
+		"how are things looking?",
+		"check network policies",
+		"show resource usage",
+		"status of all kustomizations",
+		"list helm releases",
+	}
+
+	for _, agent := range specialistAgents {
+		for _, query := range queries {
+			t.Run(fmt.Sprintf("%s/%s", agent, query), func(t *testing.T) {
+				result := selectModelForQuery(query, agent)
+				if result != modelPremium {
+					t.Errorf("selectModelForQuery(%q, %q) = %q, want %q", query, agent, result, modelPremium)
+				}
+			})
+		}
 	}
 }
 

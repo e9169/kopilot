@@ -15,6 +15,7 @@ import (
 
 const (
 	errToolDescriptionEmpty = "Tool description is empty"
+	errToolNameFormat       = "Tool name = %s, want %s"
 )
 
 func TestDefineTools(t *testing.T) {
@@ -59,7 +60,7 @@ func TestListClustersTool(t *testing.T) {
 	tool := defineListClustersTool(provider, state)
 
 	if tool.Name != toolListClusters {
-		t.Errorf("Tool name = %s, want %s", tool.Name, toolListClusters)
+		t.Errorf(errToolNameFormat, tool.Name, toolListClusters)
 	}
 
 	if tool.Description == "" {
@@ -106,7 +107,7 @@ func TestGetClusterStatusTool(t *testing.T) {
 	tool := defineGetClusterStatusTool(provider, state)
 
 	if tool.Name != toolGetClusterStatus {
-		t.Errorf("Tool name = %s, want %s", tool.Name, toolGetClusterStatus)
+		t.Errorf(errToolNameFormat, tool.Name, toolGetClusterStatus)
 	}
 
 	tests := []struct {
@@ -148,7 +149,7 @@ func TestCompareClustersTool(t *testing.T) {
 	tool := defineCompareClustersTool(provider, state)
 
 	if tool.Name != toolCompareClusters {
-		t.Errorf("Tool name = %s, want %s", tool.Name, toolCompareClusters)
+		t.Errorf(errToolNameFormat, tool.Name, toolCompareClusters)
 	}
 
 	if tool.Description == "" {
@@ -279,7 +280,7 @@ func TestToolParameterValidation(t *testing.T) {
 
 // Helper functions
 
-func createMockProvider(t *testing.T) *k8s.Provider {
+func createMockProvider(t testing.TB) *k8s.Provider {
 	t.Helper()
 
 	tmpfile, err := os.CreateTemp("", "kubeconfig-*.yaml")
@@ -327,21 +328,7 @@ func createMockProvider(t *testing.T) *k8s.Provider {
 }
 
 func contains(s, substr string) bool {
-	// Make case-insensitive comparison
-	s = strings.ToLower(s)
-	substr = strings.ToLower(substr)
-	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) > len(substr) &&
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-			len(s) > len(substr)*2 && findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
 func TestToolConcurrency(t *testing.T) {
@@ -396,7 +383,7 @@ func BenchmarkDefineTools(b *testing.B) {
 }
 
 func BenchmarkListClustersTool(b *testing.B) {
-	provider := createMockProvider(&testing.T{})
+	provider := createMockProvider(b)
 	state := &agentState{mode: ModeReadOnly, outputFormat: OutputText}
 	tool := defineListClustersTool(provider, state)
 	inv := copilot.ToolInvocation{}

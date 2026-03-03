@@ -48,15 +48,16 @@ Kopilot now uses intelligent model selection to optimize costs while maintaining
 The model selection is dynamic and happens automatically:
 
 1. **Initial Session**: Starts with `gpt-4o-mini` for health checks
-2. **Query Analysis**: Each user query is analyzed for complexity
-3. **Session Recreation**: When a different model is needed, the session is recreated with the optimal model
-4. **Transparent Switching**: Model switches are logged but don't interrupt the conversation
+2. **Agent Check**: If a specialist agent is active (`debugger`, `security`, `optimizer`, `gitops`), always use the premium model regardless of query text
+3. **Query Analysis**: For the `default` agent, each user query is analyzed for complexity
+4. **Session Recreation**: When a different model is needed, the session is recreated with the optimal model
+5. **Transparent Switching**: Model switches are logged but don't interrupt the conversation
 
 ### Code Flow
 
 ```go
-// Determine optimal model based on query
-optimalModel := selectModelForQuery(userInput)
+// Determine optimal model based on query and active agent
+optimalModel := selectModelForQuery(userInput, currentAgent)
 
 // Create new session if model needs to change
 if optimalModel != currentModel {
@@ -65,6 +66,20 @@ if optimalModel != currentModel {
     currentModel = optimalModel
 }
 ```
+
+## Agent-Aware Model Selection
+
+Specialist agents (`debugger`, `security`, `optimizer`, `gitops`) always use the premium model, even for queries that would normally be considered simple (e.g., "list pods"). This is intentional: specialist reasoning benefits from the higher capacity of the premium model — even a routine "show events" query issued through the Debugger persona may require deep contextual analysis.
+
+The `default` agent uses the keyword-based heuristic described above.
+
+| Agent | Model strategy |
+| ------- | --------------- |
+| `default` | Dynamic — cost-effective or premium based on query keywords |
+| `debugger` | Always premium |
+| `security` | Always premium |
+| `optimizer` | Always premium |
+| `gitops` | Always premium |
 
 ## Cost Optimization Results
 
@@ -122,8 +137,14 @@ Potential improvements to the model selection strategy:
 Currently, model selection is automatic. To modify the strategy, edit the `selectModelForQuery()` function in [pkg/agent/agent.go](pkg/agent/agent.go):
 
 ```go
-func selectModelForQuery(query string) string {
-    // Add or modify keyword lists
+// selectModelForQuery determines the best model based on query complexity,
+// intent, and the active agent type.
+func selectModelForQuery(query string, agentType AgentType) string {
+    // Specialist agents always use the premium model
+    if def, ok := agentDefinitions[agentType]; ok && def.preferPremium {
+        return modelPremium
+    }
+    // Add or modify keyword lists for the default agent
     // Adjust model selection logic
     // Return appropriate model name
 }

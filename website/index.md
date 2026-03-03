@@ -3,6 +3,7 @@ layout: default
 title: Home
 ---
 
+<!-- markdownlint-disable MD033 -->
 <div style="text-align: center; padding: 4rem 0;">
   <img src="{{ site.baseurl }}/kopilot-logo.png" alt="Kopilot Logo" style="max-width: 300px; margin-bottom: 2rem;">
   <h1 style="font-size: 3rem; margin-bottom: 1rem; background: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 50%, #ec4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">AI KUBERNETES ASSISTANT</h1>
@@ -96,6 +97,12 @@ kopilot
     <div style="font-size: 3rem; margin-bottom: 0.5rem;">💰</div>
     <h3 style="background: linear-gradient(135deg, #ec4899, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Smart Model Selection</h3>
     <p>Automatically switches between cost-effective models for simple queries and premium models for complex tasks, reducing costs by 50-70%. Works with any model from your GitHub Copilot subscription.</p>
+  </div>
+  
+  <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #06b6d4, #8b5cf6) border-box; border-radius: 0.5rem;">
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🎭</div>
+    <h3 style="background: linear-gradient(135deg, #06b6d4, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Specialist Agents</h3>
+    <p>Four domain-focused AI personas: <strong>Debugger</strong> 🔍 for root cause analysis, <strong>Security</strong> 🛡️ for RBAC &amp; privilege audits, <strong>Optimizer</strong> ⚡ for resource right-sizing, and <strong>GitOps</strong> 🔄 for Flux/ArgoCD sync. Switch at runtime with <code>/agent &lt;name&gt;</code>.</p>
   </div>
   
   <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #06b6d4, #ec4899) border-box; border-radius: 0.5rem;">

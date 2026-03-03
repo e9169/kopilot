@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.4] - 2026-03-02
 
 ### Changed
+
 - Upgrade `github.com/github/copilot-sdk/go` from v0.1.25 to v0.1.29
 - Bump `k8s.io/client-go`, `k8s.io/api`, `k8s.io/apimachinery` from 0.35.1 to 0.35.2
 - Bump `github.com/klauspost/compress` from 1.18.3 to 1.18.4 (promoted to direct dependency)
@@ -18,20 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Skip CI workflows on documentation-only changes
 
 ### Documentation
+
 - Add interface screenshot to README showing kopilot startup screen
 - Align SDK version references with go.mod
 
 ## [0.2.3] - 2026-02-20
 
 ### Added
+
 - Quick installation method and detailed installation guide
 
 ### Fixed
+
 - Update `isPodHealthy` to consider Succeeded pods as healthy
 
 ## [0.2.2] - 2026-02-19
 
 ### Fixed
+
 - Improve compatibility between the Copilot SDK and Copilot CLI integrations
 - Minor housekeeping and release preparation
 
@@ -39,22 +44,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.1] - 2026-02-17
 
 ### Fixed
+
 - Resolve compatibility issues with Copilot CLI v0.0.410
 
 ### Added
+
 - System Copilot CLI integration with version checking
 
 ### Documentation
+
 - Update CLI version requirements documentation
 
 ## [0.2.0] - 2026-02-17
 
 ### Added
+
 - Modernize CLI interface with GitHub Copilot-inspired UX
 - Cross-platform compilation verification in CI for all 6 release targets
 - Comprehensive platform support documentation (tested vs compiled-only)
 
 ### Changed
+
 - Update to Go 1.26 across CI workflows and codebase
 - Upgrade Copilot SDK from v0.1.20 to v0.1.23
 - Update k8s.io/client-go from 0.35.0 to 0.35.1
@@ -63,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update GitHub Actions: codeql-action (3→4), codecov-action (4→5)
 
 ### Fixed
+
 - Configure custom domain for website deployment
 - Correct logo path for GitHub Pages deployment
 - Correct codecov action parameter from file to files
@@ -71,11 +82,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI lint failure by pinning Go version to 1.26
 
 ### Style
+
 - Improve website UI with transparent navigation and consistent icons
 - Update AI Output Disclaimer styling for improved visibility
 - Cleanup unused code and improve UI output formatting
 
 ### Documentation
+
 - Add GitHub Copilot instructions and workflow prompts
 - Fix startup behavior description
 - Integrate PR specification prompt into auto-commit workflow
@@ -84,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-01-30
 
 ### Added
+
 - Initial open-source release of Kopilot
 - Interactive GitHub Copilot-powered agent for Kubernetes status queries
 - Read-only and interactive execution modes for safety
@@ -104,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependabot for automated dependency updates
 
 ### Documentation
+
 - Detailed README with quick start guide
 - Contributing guidelines for open source contributors
 - Code of Conduct and Security Policy
@@ -111,6 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Architecture and design documentation
 
 ### CI/CD
+
 - GitHub Actions workflows for testing and linting
 - Automated release workflow with GoReleaser
 - Security scanning and vulnerability detection
