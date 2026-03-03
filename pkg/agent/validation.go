@@ -9,6 +9,9 @@ import (
 )
 
 var (
+	// kubernetesNameRegexp validates a Kubernetes resource name per RFC 1123 DNS subdomain rules.
+	kubernetesNameRegexp = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+
 	// dangerousCommands lists kubectl commands that should be extra careful with
 	dangerousCommands = map[string]bool{
 		"delete":      true,
@@ -170,7 +173,7 @@ func isValidKubernetesName(name string) bool {
 		return false
 	}
 
-	match, _ := regexp.MatchString(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`, name)
+	match := kubernetesNameRegexp.MatchString(name)
 	return match
 }
 
