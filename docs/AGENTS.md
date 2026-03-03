@@ -138,7 +138,7 @@ kopilot --agent gitops
 
 You can switch between agents during a session without restarting:
 
-```bash
+```text
 # Show current agent and available roster
 ❯ /agent
 ❯ /agent list
