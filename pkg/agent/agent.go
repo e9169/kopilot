@@ -8,7 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"strings"
 
@@ -38,6 +38,218 @@ const (
 	// OutputJSON returns JSON output
 	OutputJSON OutputFormat = "json"
 )
+
+// AgentType defines the specialized agent persona
+type AgentType string
+
+const (
+	// AgentDefault uses the standard Kopilot persona
+	AgentDefault AgentType = "default"
+	// AgentDebugger specializes in root cause analysis and failure diagnosis
+	AgentDebugger AgentType = "debugger"
+	// AgentSecurity specializes in RBAC auditing, privilege escalation, and CVE detection
+	AgentSecurity AgentType = "security"
+	// AgentOptimizer specializes in resource right-sizing and cost optimization
+	AgentOptimizer AgentType = "optimizer"
+	// AgentGitOps specializes in Flux/ArgoCD sync status and drift detection
+	AgentGitOps AgentType = "gitops"
+)
+
+// agentDefinition holds the configuration for a specialized agent persona
+type agentDefinition struct {
+	Name        string
+	DisplayName string
+	Icon        string
+	Description string
+	Prompt      string
+	Examples    []string
+	// Tools restricts which tools this agent can use (nil = all tools)
+	Tools []string
+	// preferPremium forces the premium model for all queries when this agent is active,
+	// since specialist reasoning benefits from higher model capacity regardless of
+	// how simple the query text appears.
+	preferPremium bool
+}
+
+// agentDefinitions maps AgentType to its full configuration
+var agentDefinitions = map[AgentType]agentDefinition{
+	AgentDebugger: {
+		Name:          "k8s-debugger",
+		DisplayName:   "K8s Debugger",
+		Icon:          "🔍",
+		Description:   "Root cause analysis, log correlation, and pod failure diagnosis",
+		preferPremium: true,
+		Prompt: `You are a Kubernetes debugging specialist focused on root cause analysis.
+
+INVESTIGATION ORDER:
+1. Check events and recent changes first
+2. Correlate pod status, restarts, and conditions
+3. Inspect logs only after establishing the failure timeline
+4. Check resource limits, liveness/readiness probes, and node conditions
+5. Trace the failure chain: what failed -> why -> what triggered it
+
+OUTPUT FORMAT (always use this structure):
+🔴 ROOT CAUSE: one-line summary of the actual problem
+📋 EVIDENCE: key facts from events/logs/status that confirm it
+🔗 FAILURE CHAIN: what led to what (if multi-step)
+🔧 FIX: exact steps to resolve — kubectl commands where applicable
+⚠️ PREVENT: what to change to stop it happening again
+
+Rules:
+- Be specific: name the pod, namespace, exit code, error message
+- Always explain WHY before HOW TO FIX
+- No markdown tables or bold — use plain text with the emoji headers above`,
+		Examples: []string{
+			"Why is my pod in CrashLoopBackOff?",
+			"What caused this deployment rollout to fail?",
+			"Diagnose why my service is returning 503 errors",
+			"My pod keeps OOMKilled, investigate it",
+			"Show all recent events for broken pods",
+		},
+	},
+	AgentSecurity: {
+		Name:          "k8s-security",
+		DisplayName:   "K8s Security",
+		Icon:          "🛡️",
+		Description:   "RBAC auditing, privilege escalation detection, and network policy review",
+		preferPremium: true,
+		Prompt: `You are a Kubernetes security auditor. Check for misconfigurations, privilege escalation paths, and exposure risks.
+
+AUDIT SCOPE (check in this order):
+1. Privileged containers, root users, hostPID/hostNetwork/hostPath usage
+2. Overprivileged service accounts and RBAC wildcard permissions
+3. Secrets exposed as env vars or unnecessarily mounted
+4. Network policies — missing policies mean all traffic is allowed
+5. Pod Security Admission (PSA) levels and violations
+6. Image pull policies and use of :latest tags
+
+OUTPUT FORMAT (always use this structure):
+🛡️ AUDIT SUMMARY: X critical, Y high, Z medium findings
+
+For each finding:
+🔴 CRITICAL / 🟠 HIGH / 🟡 MEDIUM / 🔵 LOW — FINDING TITLE
+  Resource: namespace/name
+  Risk: what an attacker can do with this
+  Fix: exact remediation (kubectl command or YAML snippet)
+
+✅ CLEAN: list areas with no findings
+
+Rules:
+- Always include the resource name and namespace
+- Prioritise: privilege escalation > secret exposure > network exposure > misconfig
+- No markdown tables or bold — use plain text with the emoji headers above`,
+		Examples: []string{
+			"Audit RBAC roles for overprivileged accounts",
+			"Find pods running as root or privileged",
+			"Check network policies for exposed services",
+			"Review secret usage across namespaces",
+			"Are there any PSA violations in this cluster?",
+		},
+	},
+	AgentOptimizer: {
+		Name:          "k8s-optimizer",
+		DisplayName:   "K8s Optimizer",
+		Icon:          "⚡",
+		Description:   "Resource right-sizing, HPA/VPA recommendations, and cost optimization",
+		preferPremium: true,
+		Prompt: `You are a Kubernetes resource optimization specialist. Identify waste, risk, and right-sizing opportunities.
+
+ANALYSIS SCOPE (check in this order):
+1. Pods with no resource requests or limits (node stability risk)
+2. Containers where requests >> actual usage (over-provisioned)
+3. Containers where usage approaches limits (under-provisioned, risk of OOM/throttle)
+4. Deployments with replicas but near-zero traffic (idle workloads)
+5. Node utilization and bin-packing efficiency
+6. Missing HPA on variable-traffic deployments
+
+OUTPUT FORMAT (always use this structure):
+⚡ OPTIMIZATION SUMMARY: X high, Y medium, Z low impact findings
+
+For each finding:
+🔴 HIGH / 🟡 MEDIUM / 🔵 LOW IMPACT — FINDING TITLE
+  Workload: namespace/name (container)
+  Current: requests=X limits=Y actual usage=Z
+  Recommendation: specific change with values
+  Estimated saving: CPU/memory freed or risk reduced
+
+📊 NODE EFFICIENCY: overall utilization snapshot
+
+Rules:
+- Always quote current values and recommended values side by side
+- Separate waste findings (cost) from risk findings (stability)
+- No markdown tables or bold — use plain text with the emoji headers above`,
+		Examples: []string{
+			"Which pods have no resource limits set?",
+			"Find over-provisioned workloads in production",
+			"Show node CPU and memory utilization",
+			"Which deployments would benefit from HPA?",
+			"Identify idle or low-traffic services",
+		},
+	},
+	AgentGitOps: {
+		Name:          "k8s-gitops",
+		DisplayName:   "K8s GitOps",
+		Icon:          "🔄",
+		Description:   "Flux and ArgoCD sync status, drift detection, and reconciliation diagnostics",
+		preferPremium: true,
+		Prompt: `You are a GitOps operations specialist for Kubernetes. You monitor sync health and detect drift between Git and the cluster.
+
+INVESTIGATION ORDER:
+1. Check overall sync status for all Flux Kustomizations / ArgoCD Applications
+2. For anything not Synced/Healthy: get the exact error and last reconciliation time
+3. Identify resources modified outside GitOps (drift)
+4. Check suspended or paused reconcilers
+5. Review image automation and update policies
+
+OUTPUT FORMAT (always use this structure):
+🔄 GITOPS SUMMARY: X synced, Y out-of-sync, Z suspended
+
+For each out-of-sync or failed resource:
+🔴 FAILED / 🟡 OUT-OF-SYNC / ⏸️ SUSPENDED — NAME (namespace)
+  Type: Kustomization / HelmRelease / Application
+  Last sync: timestamp
+  Error: exact error message
+  Fix: specific reconciliation command or config change
+
+✅ SYNCED: list of healthy resources (one per line)
+
+🔀 DRIFT DETECTED (if any):
+  Resource modified outside GitOps with diff summary
+
+Rules:
+- Always distinguish desired state (Git) from actual state (cluster)
+- Include the last sync timestamp for every resource
+- No markdown tables or bold — use plain text with the emoji headers above`,
+		Examples: []string{
+			"Are all Flux Kustomizations synced?",
+			"Show ArgoCD apps that are out of sync",
+			"Why is this HelmRelease failing to reconcile?",
+			"Find resources modified outside of GitOps",
+			"Check Flux image automation status",
+		},
+	},
+}
+
+// allAgentNames returns a sorted slice of all valid agent names for help text
+func allAgentNames() []string {
+	return []string{
+		string(AgentDefault),
+		string(AgentDebugger),
+		string(AgentSecurity),
+		string(AgentOptimizer),
+		string(AgentGitOps),
+	}
+}
+
+// ParseAgentType converts a string to an AgentType, returning an error for unknown values
+func ParseAgentType(s string) (AgentType, error) {
+	switch AgentType(strings.ToLower(s)) {
+	case AgentDefault, AgentDebugger, AgentSecurity, AgentOptimizer, AgentGitOps:
+		return AgentType(strings.ToLower(s)), nil
+	default:
+		return AgentDefault, fmt.Errorf("unknown agent %q — valid agents: %s", s, strings.Join(allAgentNames(), ", "))
+	}
+}
 
 const (
 	// Default model selection constants
@@ -88,7 +300,19 @@ type agentState struct {
 	mode            ExecutionMode
 	outputFormat    OutputFormat
 	quotaPercentage float64
-	quotaDisplayed  bool
+	quotaUnlimited  bool
+	quotaUsed       float64
+	quotaTotal      float64
+	selectedAgent   AgentType
+}
+
+// loopDeps groups the immutable runtime dependencies shared across the interactive session loop.
+type loopDeps struct {
+	ctx         context.Context
+	client      *copilot.Client
+	k8sProvider *k8s.Provider
+	state       *agentState
+	isIdle      *bool
 }
 
 func isJSONOutput(format OutputFormat) bool {
@@ -160,91 +384,98 @@ For kubectl operations:
 Be helpful, clear, and conversational.`
 }
 
-// displayQuota shows quota information in GitHub Copilot CLI style
-func displayQuota(state *agentState) {
-	if isJSONOutput(state.outputFormat) || state.quotaPercentage < 0 {
-		return
+// onMessageEvent handles the final complete assistant message.
+func onMessageEvent(event copilot.SessionEvent) {
+	if event.Data.Content != nil && *event.Data.Content != "" {
+		fmt.Println(*event.Data.Content)
 	}
-	fmt.Printf("%.0f%% of quota remaining\n", state.quotaPercentage)
 }
 
-// setupSessionEventHandler creates and returns an event handler for the session
-func setupSessionEventHandler(session *copilot.Session, isIdlePtr *bool, state *agentState, messageBuffer *strings.Builder) {
+// onSessionErrorEvent prints errors from session.error events to the user.
+func onSessionErrorEvent(event copilot.SessionEvent) {
+	d := event.Data
+	msg := "(unknown session error)"
+	if d.Message != nil && *d.Message != "" {
+		msg = *d.Message
+	}
+	code := ""
+	if d.StatusCode != nil {
+		code = fmt.Sprintf(" [status %d]", *d.StatusCode)
+	}
+	errType := ""
+	if d.ErrorType != nil && *d.ErrorType != "" {
+		errType = fmt.Sprintf(" [%s]", *d.ErrorType)
+	}
+	reason := ""
+	if d.ErrorReason != nil && *d.ErrorReason != "" {
+		reason = fmt.Sprintf(" (reason: %s)", *d.ErrorReason)
+	}
+	fmt.Fprintf(os.Stderr, "Error%s%s: %s%s\n", code, errType, msg, reason)
+}
+
+// onUsageEvent records quota information from usage snapshots.
+func onUsageEvent(event copilot.SessionEvent, state *agentState) {
+	if event.Data.QuotaSnapshots == nil {
+		return
+	}
+	snapshot, exists := event.Data.QuotaSnapshots["premium_interactions"]
+	if exists && snapshot.RemainingPercentage >= 0 {
+		state.quotaPercentage = snapshot.RemainingPercentage
+		state.quotaUnlimited = snapshot.IsUnlimitedEntitlement
+		state.quotaUsed = snapshot.UsedRequests
+		state.quotaTotal = snapshot.EntitlementRequests
+	}
+}
+
+// setupSessionEventHandler creates and returns an event handler for the session.
+func setupSessionEventHandler(session *copilot.Session, isIdlePtr *bool, state *agentState) {
 	session.On(func(event copilot.SessionEvent) {
 		switch event.Type {
-		case "assistant.message_delta":
-			if event.Data.DeltaContent != nil && len(*event.Data.DeltaContent) > 0 {
-				// Display quota before first content if available
-				if state.quotaDisplayed && messageBuffer.Len() == 0 {
-					displayQuota(state)
-					state.quotaDisplayed = false // Only show once per response
-				}
-				fmt.Print(*event.Data.DeltaContent)
-				messageBuffer.WriteString(*event.Data.DeltaContent)
-			}
 		case "assistant.message":
-			if messageBuffer.Len() == 0 && event.Data.Content != nil {
-				// Display quota before message if available
-				if state.quotaDisplayed {
-					displayQuota(state)
-					state.quotaDisplayed = false
-				}
-				fmt.Print(*event.Data.Content)
-			}
-			fmt.Println()
-			messageBuffer.Reset()
+			onMessageEvent(event)
+		case "session.error":
+			onSessionErrorEvent(event)
 		case "session.idle":
 			*isIdlePtr = true
 		case "assistant.usage":
-			if event.Data.QuotaSnapshots != nil {
-				if snapshot, exists := event.Data.QuotaSnapshots["premium_interactions"]; exists {
-					if snapshot.RemainingPercentage >= 0 {
-						state.quotaPercentage = snapshot.RemainingPercentage
-						state.quotaDisplayed = true
-					}
-				}
-			}
+			onUsageEvent(event, state)
 		}
 	})
 }
 
-// getRandomExamples returns a random selection of example prompts
+// defaultExamples is the pool of general-purpose example prompts shown at startup.
+var defaultExamples = []string{
+	"Show me all my clusters",
+	"What's the health status of all clusters?",
+	"List all pods in the default namespace",
+	"Compare production and staging clusters",
+	"Check if all nodes are ready",
+	"Show me failing pods",
+	"Get status of cluster production",
+	"How many pods are running?",
+	"List all namespaces",
+	"Show me pod resource usage",
+	"Check health of all clusters in parallel",
+	"What version of Kubernetes am I running?",
+	"Show me recent events",
+	"List all services",
+	"Check node capacity",
+	"Show deployments in kube-system",
+}
+
+// getRandomExamples returns a random selection of example prompts.
 func getRandomExamples(count int) []string {
-	examples := []string{
-		"Show me all my clusters",
-		"What's the health status of all clusters?",
-		"List all pods in the default namespace",
-		"Compare production and staging clusters",
-		"Check if all nodes are ready",
-		"Show me failing pods",
-		"Get status of cluster production",
-		"How many pods are running?",
-		"List all namespaces",
-		"Show me pod resource usage",
-		"Check health of all clusters in parallel",
-		"What version of Kubernetes am I running?",
-		"Show me recent events",
-		"List all services",
-		"Check node capacity",
-		"Show deployments in kube-system",
-	}
-
-	// Shuffle and select (Go 1.20+ automatically seeds the global RNG)
-	shuffled := make([]string, len(examples))
-	copy(shuffled, examples)
-	rand.Shuffle(len(shuffled), func(i, j int) {
-		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
-	})
-
+	shuffled := make([]string, len(defaultExamples))
+	copy(shuffled, defaultExamples)
+	rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
 	if count > len(shuffled) {
 		count = len(shuffled)
 	}
-
 	return shuffled[:count]
 }
 
 // Run starts the Copilot agent with Kubernetes cluster tools
-func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputFormat) error {
+func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputFormat, agentType AgentType) error {
 	// Configure logging to stderr to avoid interfering with stdio-based JSON-RPC
 	log.SetOutput(os.Stderr)
 
@@ -253,7 +484,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 		mode:            mode,
 		outputFormat:    outputFormat,
 		quotaPercentage: -1,
-		quotaDisplayed:  false,
+		selectedAgent:   agentType,
 	}
 
 	// Create a cancellable context for the entire agent lifecycle
@@ -284,61 +515,90 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	}()
 
 	// Set up event handling
-	messageBuffer := strings.Builder{}
 	var isIdle bool
-	setupSessionEventHandler(session, &isIdle, state, &messageBuffer)
+	setupSessionEventHandler(session, &isIdle, state)
 
 	if !isJSONOutput(outputFormat) {
-		// ASCII art logo
-		fmt.Println()
-		fmt.Printf("%s  $    $$                       $     \"\"$$               $$           %s\n", colorCyan, colorReset)
-		fmt.Printf("%s  $  $$     #$$$    $ $$$     $$$       $$      $$$1   $$$$$$$   %s[))%s  \n", colorCyan, colorRed, colorReset)
-		fmt.Printf("%s  $$$$     $    $   $d   $      $       $$     $    $    $$      %s)))%s  \n", colorCyan, colorRed, colorReset)
-		fmt.Printf("%s  $   $    $    $[  $    $;     $       $$    $$    $    B$      %s)))%s  \n", colorCyan, colorRed, colorReset)
-		fmt.Printf("%s  $    $$   $$j$$   $$$|$$   $$$$$$$     $$$   $$\\$$      $$$$   %s)))%s  \n", colorCyan, colorRed, colorReset)
-		fmt.Printf("%s                    $                                            %s[))%s  \n", colorCyan, colorRed, colorReset)
-		fmt.Println()
-		fmt.Printf("               %sKubernetes Operations Assistant%s\n", colorDim, colorReset)
-		fmt.Printf("                         %s%s%s\n", colorDim, AppVersion, colorReset)
-		fmt.Println()
-
-		// Status messages with icons
-		clusters := k8sProvider.GetClusters()
-		currentCtx := k8sProvider.GetCurrentContext()
-		fmt.Printf("  %s●%s Connected to %d cluster(s)\n", colorGreen, colorReset, len(clusters))
-		if currentCtx != "" {
-			fmt.Printf("  %s●%s Active context: %s%s%s\n", colorCyan, colorReset, colorCyan, currentCtx, colorReset)
-		}
-
-		// Execution mode with icon
-		modeIcon := "🔒"
-		modeColor := colorYellow
-		modeText := "read-only"
-		if mode == ModeInteractive {
-			modeIcon = "🔓"
-			modeColor = colorGreen
-			modeText = "interactive"
-		}
-		fmt.Printf("  %s●%s Mode: %s%s %s%s\n", modeColor, colorReset, modeIcon, modeColor, modeText, colorReset)
-
-		// Show random example prompts
-		fmt.Println()
-		fmt.Printf("  %sTry asking:%s\n", colorDim, colorReset)
-		examples := getRandomExamples(3)
-		for _, example := range examples {
-			fmt.Printf("    %s•%s %s\"%s\"%s\n", colorCyan, colorReset, colorDim, example, colorReset)
-		}
-
-		fmt.Println()
-		fmt.Printf("  %sType your request to get started. Enter 'exit' to quit.%s\n", colorDim, colorReset)
-		fmt.Println()
+		printBanner(k8sProvider, mode, agentType)
 	}
 
 	// Mark as idle so user can start typing immediately
 	isIdle = true
 
 	// Interactive loop with session management
-	return interactiveLoopWithModelSelection(ctx, client, k8sProvider, state, session, &isIdle, &messageBuffer)
+	deps := &loopDeps{
+		ctx:         ctx,
+		client:      client,
+		k8sProvider: k8sProvider,
+		state:       state,
+		isIdle:      &isIdle,
+	}
+	return interactiveLoopWithModelSelection(deps, session)
+}
+
+// printBanner prints the ASCII art logo and startup status to stdout.
+func printBanner(k8sProvider *k8s.Provider, mode ExecutionMode, agentType AgentType) {
+	fmt.Println()
+	fmt.Printf("%s  $    $$                       $     \"\"$$               $$           %s\n", colorCyan, colorReset)
+	fmt.Printf("%s  $  $$     #$$$    $ $$$     $$$       $$      $$$1   $$$$$$$   %s[))%s  \n", colorCyan, colorRed, colorReset)
+	fmt.Printf("%s  $$$$     $    $   $d   $      $       $$     $    $    $$      %s)))%s  \n", colorCyan, colorRed, colorReset)
+	fmt.Printf("%s  $   $    $    $[  $    $;     $       $$    $$    $    B$      %s)))%s  \n", colorCyan, colorRed, colorReset)
+	fmt.Printf("%s  $    $$   $$j$$   $$$|$$   $$$$$$$     $$$   $$\\$$      $$$$   %s)))%s  \n", colorCyan, colorRed, colorReset)
+	fmt.Printf("%s                    $                                            %s[))%s  \n", colorCyan, colorRed, colorReset)
+	fmt.Println()
+	fmt.Printf("               %sKubernetes Operations Assistant%s\n", colorDim, colorReset)
+	fmt.Printf("                         %s%s%s\n", colorDim, AppVersion, colorReset)
+	fmt.Println()
+
+	clusters := k8sProvider.GetClusters()
+	currentCtx := k8sProvider.GetCurrentContext()
+	fmt.Printf("  %s●%s Connected to %d cluster(s)\n", colorGreen, colorReset, len(clusters))
+	if currentCtx != "" {
+		fmt.Printf("  %s●%s Active context: %s%s%s\n", colorCyan, colorReset, colorCyan, currentCtx, colorReset)
+	}
+
+	printBannerMode(mode)
+	printBannerAgent(agentType)
+	printBannerExamples(agentType)
+}
+
+// printBannerMode prints the current execution mode line.
+func printBannerMode(mode ExecutionMode) {
+	modeIcon, modeColor, modeText := "🔒", colorYellow, "read-only"
+	if mode == ModeInteractive {
+		modeIcon, modeColor, modeText = "🔓", colorGreen, "interactive"
+	}
+	fmt.Printf("  %s●%s Mode: %s%s %s%s\n", modeColor, colorReset, modeIcon, modeColor, modeText, colorReset)
+}
+
+// printBannerAgent prints the active specialist agent line, if one is selected.
+func printBannerAgent(agentType AgentType) {
+	if agentType == AgentDefault {
+		return
+	}
+	def := agentDefinitions[agentType]
+	fmt.Printf("  %s●%s Agent: %s%s %s%s — %s\n", colorCyan, colorReset, colorCyan, def.Icon, def.DisplayName, colorReset, def.Description)
+}
+
+// printBannerExamples prints the "Try asking" prompt examples.
+func printBannerExamples(agentType AgentType) {
+	examples := getRandomExamples(3)
+	if agentType != AgentDefault {
+		def := agentDefinitions[agentType]
+		examples = def.Examples
+		if len(examples) > 3 {
+			examples = examples[:3]
+		}
+	}
+	fmt.Println()
+	fmt.Printf("  %sTry asking:%s\n", colorDim, colorReset)
+	for _, example := range examples {
+		fmt.Printf("    %s•%s %s\"%s\"%s\n", colorCyan, colorReset, colorDim, example, colorReset)
+	}
+	fmt.Println()
+	fmt.Printf("  %sType your request to get started. Enter 'exit' to quit.%s\n", colorDim, colorReset)
+	fmt.Printf("  %sHint: /help to see all commands | /agent list to see specialist agents.%s\n", colorDim, colorReset)
+	fmt.Println()
 }
 
 // createAndStartClient creates and starts the Copilot client.
@@ -368,15 +628,45 @@ func createAndStartClient(ctx context.Context) (*copilot.Client, error) {
 	return client, nil
 }
 
+// buildCustomAgents converts all agentDefinitions into SDK CustomAgentConfig entries
+func buildCustomAgents() []copilot.CustomAgentConfig {
+	configs := make([]copilot.CustomAgentConfig, 0, len(agentDefinitions))
+	for _, def := range agentDefinitions {
+		configs = append(configs, copilot.CustomAgentConfig{
+			Name:        def.Name,
+			DisplayName: def.DisplayName,
+			Description: def.Description,
+			Prompt:      def.Prompt,
+			Tools:       def.Tools, // nil means all tools are available
+		})
+	}
+	return configs
+}
+
+// buildSystemMessage composes the full system message, optionally including the
+// specialist prompt for the currently selected agent persona.
+func buildSystemMessage(agentType AgentType) string {
+	base := getSystemMessage()
+	if agentType == AgentDefault {
+		return base
+	}
+	def, ok := agentDefinitions[agentType]
+	if !ok {
+		return base
+	}
+	return base + "\n\n" + def.Prompt
+}
+
 // createSessionWithModel creates a new Copilot session with specified model
 func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProvider *k8s.Provider, state *agentState, model string) (*copilot.Session, error) {
 	tools := defineTools(k8sProvider, state)
-	systemMessage := getSystemMessage()
+	systemMessage := buildSystemMessage(state.selectedAgent)
 
 	session, err := client.CreateSession(ctx, &copilot.SessionConfig{
 		Model:               model,
-		Streaming:           true,
+		Streaming:           false,
 		Tools:               tools,
+		CustomAgents:        buildCustomAgents(),
 		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
 		SystemMessage: &copilot.SystemMessageConfig{
 			Mode:    "append",
@@ -387,12 +677,19 @@ func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProv
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
-	log.Printf("Session created with model: %s", model)
+	agentLabel := string(state.selectedAgent)
+	log.Printf("Session created with model: %s, agent: %s", model, agentLabel)
 	return session, nil
 }
 
-// selectModelForQuery determines the best model based on query complexity and intent
-func selectModelForQuery(query string) string {
+// selectModelForQuery determines the best model based on query complexity, intent, and active agent.
+// Specialist agents always use the premium model — their reasoning tasks benefit from higher
+// model capacity regardless of how simple the query text appears.
+func selectModelForQuery(query string, agentType AgentType) string {
+	// Specialist agents always warrant the premium model
+	if def, ok := agentDefinitions[agentType]; ok && def.preferPremium {
+		return modelPremium
+	}
 	lowerQuery := strings.ToLower(query)
 
 	// High-priority/complex tasks - use premium model
@@ -444,9 +741,27 @@ func waitForIdle(isIdle *bool) {
 	}
 }
 
+// quotaPrompt returns the prompt prefix string with quota info when available.
+func quotaPrompt(state *agentState) string {
+	if isJSONOutput(state.outputFormat) || state.quotaUnlimited || state.quotaPercentage < 0 {
+		return "❯ "
+	}
+	pct := state.quotaPercentage
+	var indicator string
+	switch {
+	case pct <= 5:
+		indicator = colorRed + fmt.Sprintf("[⚠ %.0f%%]", pct) + colorReset
+	case pct <= 20:
+		indicator = colorYellow + fmt.Sprintf("[%.0f%%]", pct) + colorReset
+	default:
+		indicator = colorDim + fmt.Sprintf("[%.0f%%]", pct) + colorReset
+	}
+	return indicator + " ❯ "
+}
+
 // readUserInput reads and trims user input from stdin
-func readUserInput(reader *bufio.Reader) (string, error) {
-	fmt.Print("❯ ")
+func readUserInput(reader *bufio.Reader, state *agentState) (string, error) {
+	fmt.Print(quotaPrompt(state))
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		return "", fmt.Errorf("error reading input: %w", err)
@@ -460,12 +775,40 @@ func isExitCommand(input string) bool {
 	return lower == "exit" || lower == "quit"
 }
 
+// printHelpMessage displays all available runtime commands.
+func printHelpMessage(state *agentState) {
+	agentNames := strings.Join(allAgentNames(), " | ")
+	fmt.Println()
+	fmt.Printf("  %s━━ Kopilot Commands ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
+	fmt.Println()
+	fmt.Printf("  %sSession%s\n", colorDim, colorReset)
+	fmt.Printf("    %s/help%s              show this help message\n", colorCyan, colorReset)
+	fmt.Printf("    %sexit%s, %squit%s        exit Kopilot\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Println()
+	fmt.Printf("  %sExecution Mode%s\n", colorDim, colorReset)
+	fmt.Printf("    %s/mode%s, %s/status%s     show current execution mode\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("    %s/readonly%s          switch to 🔒 read-only mode (blocks write operations)\n", colorCyan, colorReset)
+	fmt.Printf("    %s/interactive%s       switch to 🔓 interactive mode (prompts before writes)\n", colorCyan, colorReset)
+	fmt.Println()
+	fmt.Printf("  %sSpecialist Agents%s\n", colorDim, colorReset)
+	fmt.Printf("    %s/agent%s             show active agent and available roster\n", colorCyan, colorReset)
+	fmt.Printf("    %s/agent list%s        same as /agent\n", colorCyan, colorReset)
+	fmt.Printf("    %s/agent <name>%s      switch agent  [ %s ]\n", colorCyan, colorReset, agentNames)
+	fmt.Println()
+	fmt.Printf("  %sCurrent mode: %s  |  Active agent: %s%s\n", colorDim, state.mode, state.selectedAgent, colorReset)
+	fmt.Println()
+}
+
 // handleModeSwitch handles runtime mode switching commands
 // Returns true if the input was a mode switch command
 func handleModeSwitch(input string, state *agentState) bool {
 	lower := strings.TrimSpace(strings.ToLower(input))
 
 	switch lower {
+	case "/help":
+		printHelpMessage(state)
+		return true
+
 	case "/readonly", "/readonly on":
 		if state.mode == ModeReadOnly {
 			fmt.Printf("  %s●%s Already in read-only mode\n", colorYellow, colorReset)
@@ -498,97 +841,202 @@ func handleModeSwitch(input string, state *agentState) bool {
 	return false
 }
 
-// switchToModel switches to a different model by creating a new session
-func switchToModel(
-	ctx context.Context,
-	client *copilot.Client,
-	k8sProvider *k8s.Provider,
-	state *agentState,
-	oldSession *copilot.Session,
-	newModel string,
-	isIdle *bool,
-	messageBuffer *strings.Builder,
-) (*copilot.Session, error) {
-	// Destroy old session
+// printAgentList displays the active agent and the available agent roster.
+func printAgentList(state *agentState) {
+	currentDef, isSpecialist := agentDefinitions[state.selectedAgent]
+	if state.selectedAgent == AgentDefault || !isSpecialist {
+		fmt.Printf("  %s●%s Active agent: %sdefault%s (standard Kopilot persona)\n", colorCyan, colorReset, colorCyan, colorReset)
+	} else {
+		fmt.Printf("  %s●%s Active agent: %s%s %s%s\n", colorCyan, colorReset, colorCyan, currentDef.Icon, currentDef.DisplayName, colorReset)
+	}
+	fmt.Printf("\n  %sAvailable agents:%s\n", colorDim, colorReset)
+	fmt.Printf("    %s•%s %sdefault%s  — standard Kopilot persona\n", colorCyan, colorReset, colorDim, colorReset)
+	for _, at := range []AgentType{AgentDebugger, AgentSecurity, AgentOptimizer, AgentGitOps} {
+		def := agentDefinitions[at]
+		marker := " "
+		if state.selectedAgent == at {
+			marker = "*"
+		}
+		fmt.Printf("    %s%s%s %s%-10s%s — %s\n", colorCyan, marker, colorReset, colorDim, string(at), colorReset, def.Description)
+	}
+	fmt.Println()
+}
+
+// formatAgentSwitchMessage returns the confirmation line shown after switching to an agent.
+func formatAgentSwitchMessage(newAgent AgentType) string {
+	if newAgent == AgentDefault {
+		return fmt.Sprintf("  %s●%s Switched to %sdefault%s agent", colorGreen, colorReset, colorCyan, colorReset)
+	}
+	def := agentDefinitions[newAgent]
+	return fmt.Sprintf("  %s●%s Switched to %s%s %s%s", colorGreen, colorReset, colorCyan, def.Icon, def.DisplayName, colorReset)
+}
+
+// formatAlreadyUsingAgent returns the message shown when the requested agent is already active.
+func formatAlreadyUsingAgent(at AgentType) string {
+	if at == AgentDefault {
+		return fmt.Sprintf("  %s●%s Already using the default agent", colorYellow, colorReset)
+	}
+	def := agentDefinitions[at]
+	return fmt.Sprintf("  %s●%s Already using %s%s %s%s", colorYellow, colorReset, colorCyan, def.Icon, def.DisplayName, colorReset)
+}
+
+// handleAgentCommand checks whether the input is an /agent command.
+// Returns (isCommand, newAgentType, error). newAgentType is only valid when
+// isCommand is true and error is nil and the agent actually changed.
+func handleAgentCommand(input string, state *agentState) (isCommand bool, newAgent AgentType, err error) {
+	trimmed := strings.TrimSpace(input)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "/agent") {
+		return false, AgentDefault, nil
+	}
+
+	parts := strings.Fields(trimmed)
+
+	// "/agent" or "/agent list" → show status and roster
+	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == "list") {
+		printAgentList(state)
+		return true, state.selectedAgent, nil
+	}
+
+	// "/agent <name>" → validate and return the target agent
+	if len(parts) == 2 {
+		return resolveSwitchTarget(parts[1], state)
+	}
+
+	return true, AgentDefault, fmt.Errorf("usage: /agent [list | %s]", strings.Join(allAgentNames(), " | "))
+}
+
+// resolveSwitchTarget parses and validates the target agent name for /agent <name>.
+func resolveSwitchTarget(name string, state *agentState) (bool, AgentType, error) {
+	parsed, err := ParseAgentType(name)
+	if err != nil {
+		return true, AgentDefault, err
+	}
+	if parsed == state.selectedAgent {
+		fmt.Println(formatAlreadyUsingAgent(parsed))
+		return true, parsed, nil
+	}
+	return true, parsed, nil
+}
+
+// switchToModel replaces the current session with a new one using the given model.
+// All runtime dependencies are supplied via deps.
+func switchToModel(deps *loopDeps, oldSession *copilot.Session, newModel string) (*copilot.Session, error) {
 	if err := oldSession.Destroy(); err != nil {
 		log.Printf("Warning: failed to destroy old session: %v", err)
 	}
 
-	// Create new session with optimal model
-	newSession, err := createSessionWithModel(ctx, client, k8sProvider, state, newModel)
+	newSession, err := createSessionWithModel(deps.ctx, deps.client, deps.k8sProvider, deps.state, newModel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new session: %w", err)
 	}
 
-	// Set up event handling for new session
-	setupSessionEventHandler(newSession, isIdle, state, messageBuffer)
-
-	// Wait for new session to be ready
-	waitForIdle(isIdle)
+	setupSessionEventHandler(newSession, deps.isIdle, deps.state)
+	waitForIdle(deps.isIdle)
 
 	return newSession, nil
 }
 
-// interactiveLoopWithModelSelection handles interactive conversation with dynamic model selection
-func interactiveLoopWithModelSelection(
-	ctx context.Context,
-	client *copilot.Client,
-	k8sProvider *k8s.Provider,
-	state *agentState,
-	initialSession *copilot.Session,
-	isIdle *bool,
-	messageBuffer *strings.Builder,
-) error {
-	reader := bufio.NewReader(os.Stdin)
-	currentSession := initialSession
-	currentModel := modelCostEffective
+// turnState holds the mutable per-iteration state of the interactive loop.
+type turnState struct {
+	session *copilot.Session
+	model   string
+}
 
-	for {
-		waitForIdle(isIdle)
-		messageBuffer.Reset()
+// processTurn handles a single interactive turn: read input, dispatch commands, send to model.
+// Returns (exit=true) when the user has chosen to quit, or an error on failure.
+func processTurn(deps *loopDeps, reader *bufio.Reader, ts *turnState) (exit bool, err error) {
+	waitForIdle(deps.isIdle)
 
-		input, err := readUserInput(reader)
+	input, err := readUserInput(reader, deps.state)
+	if err != nil {
+		return false, err
+	}
+
+	if input == "" {
+		return false, nil
+	}
+
+	if isExitCommand(input) {
+		fmt.Println("")
+		return true, nil
+	}
+
+	if handleModeSwitch(input, deps.state) {
+		return false, nil
+	}
+
+	if handled, err := dispatchAgentCommand(deps, input, ts); handled {
+		return false, err
+	}
+
+	return false, sendToModel(deps, ts, input)
+}
+
+// dispatchAgentCommand processes /agent commands.
+// Returns (true, err) when the input was an agent command (whether it succeeded or not).
+func dispatchAgentCommand(deps *loopDeps, input string, ts *turnState) (bool, error) {
+	isAgentCmd, newAgent, agentErr := handleAgentCommand(input, deps.state)
+	if !isAgentCmd {
+		return false, nil
+	}
+	if agentErr != nil {
+		fmt.Printf("  %s●%s Error: %v\n", colorRed, colorReset, agentErr)
+		return true, nil
+	}
+	newSession, err := applyAgentSwitch(deps, newAgent, ts.session, ts.model)
+	if err != nil {
+		return true, err
+	}
+	ts.session = newSession
+	return true, nil
+}
+
+// sendToModel selects the best model for the query and sends it, updating ts as needed.
+func sendToModel(deps *loopDeps, ts *turnState, input string) error {
+	if optimalModel := selectModelForQuery(input, deps.state.selectedAgent); optimalModel != ts.model {
+		newSession, err := switchToModel(deps, ts.session, optimalModel)
 		if err != nil {
 			return err
 		}
+		ts.session = newSession
+		ts.model = optimalModel
+	}
+	*deps.isIdle = false
+	_, err := ts.session.Send(deps.ctx, copilot.MessageOptions{Prompt: input})
+	if err != nil {
+		return fmt.Errorf("failed to send message: %w", err)
+	}
+	return nil
+}
 
-		if input == "" {
-			continue
+// interactiveLoopWithModelSelection handles interactive conversation with dynamic model selection.
+func interactiveLoopWithModelSelection(deps *loopDeps, initialSession *copilot.Session) error {
+	reader := bufio.NewReader(os.Stdin)
+	ts := &turnState{session: initialSession, model: modelCostEffective}
+	for {
+		exit, err := processTurn(deps, reader, ts)
+		if err != nil {
+			return err
 		}
-
-		if isExitCommand(input) {
-			fmt.Println("")
+		if exit {
 			return nil
 		}
-
-		// Handle runtime mode switch commands
-		if handleModeSwitch(input, state) {
-			continue
-		}
-
-		// Determine optimal model for this query
-		optimalModel := selectModelForQuery(input)
-
-		// Switch model if needed
-		if optimalModel != currentModel {
-			currentSession, err = switchToModel(ctx, client, k8sProvider, state, currentSession, optimalModel, isIdle, messageBuffer)
-			if err != nil {
-				return err
-			}
-			currentModel = optimalModel
-		}
-
-		// Send user message with timeout context
-		// Use a per-request timeout to prevent indefinite blocking
-		*isIdle = false
-
-		_, err = currentSession.Send(ctx, copilot.MessageOptions{
-			Prompt: input,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to send message: %w", err)
-		}
 	}
+}
+
+// applyAgentSwitch applies a validated /agent switch command, recreating the session if needed.
+// Returns the (possibly new) current session.
+func applyAgentSwitch(deps *loopDeps, newAgent AgentType, currentSession *copilot.Session, currentModel string) (*copilot.Session, error) {
+	if newAgent == deps.state.selectedAgent {
+		return currentSession, nil
+	}
+	deps.state.selectedAgent = newAgent
+	newSession, err := switchToModel(deps, currentSession, currentModel)
+	if err != nil {
+		return currentSession, err
+	}
+	fmt.Println(formatAgentSwitchMessage(newAgent))
+	return newSession, nil
 }
 
 // defineTools creates all the Kubernetes-related tools for the agent

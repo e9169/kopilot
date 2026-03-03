@@ -16,13 +16,34 @@ import (
 
 // defineTools creates all the Kubernetes-related tools for the agent
 func defineTools(k8sProvider *k8s.Provider, state *agentState) []copilot.Tool {
-	return []copilot.Tool{
+	tools := []copilot.Tool{
 		defineListClustersTool(k8sProvider, state),
 		defineGetClusterStatusTool(k8sProvider, state),
 		defineCompareClustersTool(k8sProvider, state),
 		defineCheckAllClustersTool(k8sProvider, state),
 		defineKubectlExecTool(k8sProvider, state),
 	}
+	// Ensure all tool schemas are valid for all models/APIs.
+	// Most LLM APIs (OpenAI, Anthropic, Google, etc.) require object schemas
+	// to include a "properties" field even when there are no parameters.
+	for i := range tools {
+		tools[i] = fixEmptySchema(tools[i])
+	}
+	return tools
+}
+
+// fixEmptySchema ensures tools with no parameters have a valid JSON schema.
+// The OpenAI API requires {"type":"object","properties":{}} for parameter-less tools.
+// Without this, the SDK-generated schema for empty structs omits "properties",
+// causing a 400 "object schema missing properties" error.
+func fixEmptySchema(t copilot.Tool) copilot.Tool {
+	if t.Parameters == nil {
+		t.Parameters = map[string]any{}
+	}
+	if _, ok := t.Parameters["properties"]; !ok {
+		t.Parameters["properties"] = map[string]any{}
+	}
+	return t
 }
 
 // ListClustersParams defines no parameters for list_clusters
@@ -585,10 +606,10 @@ func printExecutionHeader(state *agentState, isReadOnly bool, fullCommand string
 		return
 	}
 	if isReadOnly {
-		fmt.Printf("\n%s🔍 Executing:%s %s%s%s\n\n", colorCyan, colorReset, colorBold, fullCommand, colorReset)
-		return
+		fmt.Printf("%s🔍 Executing:%s %s%s%s\n", colorCyan, colorReset, colorBold, fullCommand, colorReset)
+	} else {
+		fmt.Printf("%s⚡ Executing:%s %s%s%s\n", colorYellow, colorReset, colorBold, fullCommand, colorReset)
 	}
-	fmt.Printf("\n%s⚡ Executing:%s %s%s%s\n\n", colorYellow, colorReset, colorBold, fullCommand, colorReset)
 }
 
 func runKubectlCommand(cmdArgs []string) ([]byte, error) {

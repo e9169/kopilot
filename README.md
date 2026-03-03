@@ -19,11 +19,11 @@ An interactive agent built with the **official GitHub Copilot SDK** in Go that p
 > This entire project was created during a vibe coding session using **GitHub Copilot** (Claude Sonnet 4.5 model) with the sole purpose of having fun and exploring what's possible with AI-assisted development. While it works, it started as an experiment in AI-powered software creation.
 >
 > **Contributions welcome!** If you'd like to help turn this fun experiment into a serious, production-ready tool, pull requests are greatly appreciated.
-
 > **⚠️ AI Output Disclaimer**
 > Kopilot uses AI models (GPT-4o and GPT-4o-mini by default) to generate responses and interpret your requests. While designed to be helpful, **AI-generated outputs may contain errors, misinterpretations, or incomplete information**.
 >
 > **Important:**
+>
 > - Always verify AI suggestions before applying them to production systems
 > - Review kubectl commands before confirming execution (especially in interactive mode)
 > - AI models can hallucinate or provide outdated information
@@ -53,6 +53,12 @@ An interactive agent built with the **official GitHub Copilot SDK** in Go that p
   - Uses `gpt-4o-mini` for simple queries (list, status, health checks)
   - Automatically upgrades to `gpt-4o` for troubleshooting and complex operations
   - 50-70% cost reduction while maintaining quality for critical tasks
+- 🎭 **Specialist Agent Personas**: Four focused AI personas for advanced operations (see [docs/AGENTS.md](docs/AGENTS.md))
+  - `--agent debugger` — root cause analysis, log correlation, pod failure diagnosis
+  - `--agent security` — RBAC auditing, privilege escalation detection, network policy review
+  - `--agent optimizer` — resource right-sizing, HPA/VPA recommendations, cost optimization
+  - `--agent gitops` — Flux/ArgoCD sync status, drift detection, reconciliation diagnostics
+  - Switch agents at runtime with `/agent <name>` — no restart required
 - 🚀 **GitHub Copilot CLI-inspired UX**: Clean, modern interface with chevron prompt (❯) and streamlined design
 
 ## Architecture
@@ -64,7 +70,7 @@ The agent uses the **official GitHub Copilot SDK** to create an interactive assi
 Kopilot is compiled and released for:
 
 | OS | Architecture | Tested in CI | Binary Available |
-|----|--------------|--------------|------------------|
+| -- | ------------ | ------------ | ---------------- |
 | Linux | amd64 | ✅ | ✅ |
 | Linux | arm64 | ❌ | ✅ |
 | macOS | amd64 (Intel) | ❌ | ✅ |
@@ -76,7 +82,7 @@ Kopilot is compiled and released for:
 
 ## Quick Start
 
-**Quick install (recommended)**
+### Quick install (recommended)
 
 Install the latest release with a single command:
 
@@ -84,7 +90,7 @@ Install the latest release with a single command:
 curl -fsSL https://raw.githubusercontent.com/e9169/kopilot/main/install.sh | bash
 ```
 
-**Manual install**
+### Manual install
 
 ```bash
 # Install dependencies
@@ -126,7 +132,7 @@ Run `go mod verify` to ensure dependency integrity.
 ### Compatibility Matrix
 
 | Component | Minimum Version | Recommended Version | Notes |
-|-----------|----------------|---------------------|-------|
+| --------- | --------------- | ------------------- | ----- |
 | Go | 1.26.0 | 1.26.0 | Required for building |
 | Copilot CLI | 0.0.350 | **0.0.410** | SDK v0.1.29 protocol compatibility |
 | Copilot SDK | v0.1.29 | v0.1.29 | Current version |
@@ -158,34 +164,33 @@ copilot auth login
 
 If you prefer using other package managers (Homebrew, etc.), they typically install the latest version which works fine with SDK v0.1.29.
 
-<details>
-<summary>Other installation options</summary>
+#### Other installation options
 
-**Using Homebrew**
+##### Using Homebrew
+
 ```bash
 brew install github/gh-copilot/gh-copilot
 # May install v0.0.410 - check version after install
 ```
 
-**Using GitHub CLI extension**
+##### Using GitHub CLI extension
+
 ```bash
 gh extension install github/gh-copilot
 ```
 
-**VS Code Extension**
+##### VS Code Extension
+
 ```bash
 # Install GitHub Copilot extension in VS Code
 # Note: VS Code bundles v0.0.410 which works perfectly with Kopilot
 ```
 
-</details>
-
-For more details, see: https://docs.github.com/en/copilot/github-copilot-in-the-cli
+For more details, see the [Copilot CLI documentation](https://docs.github.com/en/copilot/github-copilot-in-the-cli).
 
 ### 2. Install Kopilot
 
-
-**Quick install (recommended)**
+#### Automated installation (recommended)
 
 Install the latest release with a single command:
 
@@ -194,16 +199,18 @@ curl -fsSL https://raw.githubusercontent.com/e9169/kopilot/main/install.sh | bas
 ```
 
 This will automatically:
+
 - Detect your OS and architecture
 - Download the latest release
 - Install to `/usr/local/bin` (or `~/.local/bin` if you prefer)
 - Make the binary executable
 
-**Pre-built binaries**
+#### Pre-built binaries
 
 Download pre-built binaries from the [releases page](https://github.com/e9169/kopilot/releases).
 
-**Build from source**
+#### Build from source
+
 ```bash
 git clone https://github.com/e9169/kopilot.git
 cd kopilot
@@ -226,6 +233,15 @@ kopilot --version
 # Run in interactive mode (asks before write operations)
 ./bin/kopilot --interactive
 
+# Run with a specialist agent persona
+./bin/kopilot --agent debugger
+./bin/kopilot --agent security
+./bin/kopilot --agent optimizer
+./bin/kopilot --agent gitops
+
+# Combine agent and mode
+./bin/kopilot --agent optimizer --interactive
+
 # Show version information
 ./bin/kopilot --version
 
@@ -247,27 +263,44 @@ KUBECONFIG=/path/to/kubeconfig ./bin/kopilot
 
 ### Execution Modes
 
-**� Read-Only Mode (Default)**
+#### 🔒 Read-Only Mode (Default)
+
 - Blocks all write operations (scale, delete, apply, etc.)
 - Safe for production environments and exploratory use
 - Perfect for monitoring, troubleshooting, and viewing cluster state
 - Use `--interactive` flag to enable writes with confirmation
 
-**⚡ Interactive Mode**
+#### ⚡ Interactive Mode
+
 - Asks for confirmation before executing write operations
 - Shows exactly what command will run
 - Allows cancellation of dangerous operations
 - Can be enabled at startup with `--interactive` flag
 
-**Runtime Mode Switching**
+#### Runtime Mode Switching
+
 - `/readonly` - Switch to read-only mode
 - `/interactive` - Switch to interactive mode
 - `/mode` - Show current execution mode
+
+#### Runtime Agent Switching
+
+- `/agent` or `/agent list` - Show active agent and available roster
+- `/agent debugger` - Switch to the Debugger specialist
+- `/agent security` - Switch to the Security auditor
+- `/agent optimizer` - Switch to the Optimizer specialist
+- `/agent gitops` - Switch to the GitOps specialist
+- `/agent default` - Return to the default generalist persona
+
+#### Help
+
+- `/help` - Show all available runtime commands
 
 ### Command-Line Flags
 
 - `--version` - Display version information
 - `--interactive` - Enable interactive mode (asks before write operations)
+- `--agent` - Set specialist agent persona: `default`, `debugger`, `security`, `optimizer`, `gitops` (default: `default`)
 - `--kubeconfig` - Path to kubeconfig file (default: `$KUBECONFIG` or `~/.kube/config`)
 - `--context` - Override kubeconfig context
 - `--output` - Output format: `text` or `json`
@@ -277,13 +310,16 @@ KUBECONFIG=/path/to/kubeconfig ./bin/kopilot
 ### Environment Variables
 
 **Optional:**
+
 - `KUBECONFIG` - Path to kubeconfig file (default: `~/.kube/config`)
 
 **Optional - Model Configuration:**
+
 - `KOPILOT_MODEL_COST_EFFECTIVE` - Override AI model for simple queries (default: `gpt-4o-mini`)
 - `KOPILOT_MODEL_PREMIUM` - Override AI model for complex operations (default: `gpt-4o`)
 
 **Example:**
+
 ```bash
 # Use different AI models
 export KOPILOT_MODEL_COST_EFFECTIVE="gpt-3.5-turbo"
@@ -298,9 +334,11 @@ export KUBECONFIG="/path/to/custom/kubeconfig"
 ### Interactive Session
 
 When you start kopilot, it displays:
+
 - An ASCII art logo with Kopilot branding
 - Connection status and cluster information
 - Current execution mode (read-only or interactive)
+- Active specialist agent (if not default)
 - **3 random example prompts** to help you get started
 
 You can then interact naturally:
@@ -315,6 +353,20 @@ You can then interact naturally:
 
 The agent will execute kubectl commands on your behalf and explain the results. Example prompts are randomized on each launch to help you discover different capabilities.
 
+### Specialist Agent Personas
+
+Kopilot ships with four domain-specific AI personas that focus the assistant on a particular operational area. All specialist agents always use the premium model for the best reasoning quality.
+
+| Agent | Flag | Focus |
+| ----- | ---- | ----- |
+| `default` | _(default)_ | General Kubernetes operations |
+| `debugger` 🔍 | `--agent debugger` | Root cause analysis, log correlation, pod failures |
+| `security` 🛡️ | `--agent security` | RBAC auditing, privilege checks, network policies |
+| `optimizer` ⚡ | `--agent optimizer` | Resource right-sizing, HPA/VPA, cost savings |
+| `gitops` 🔄 | `--agent gitops` | Flux/ArgoCD sync, drift detection, reconciliation |
+
+Agents can be switched at runtime with `/agent <name>`. See [docs/AGENTS.md](docs/AGENTS.md) for full details and example prompts.
+
 ## Available Tools
 
 1. **list_clusters** - Lists all clusters from kubeconfig
@@ -327,7 +379,6 @@ The agent will execute kubectl commands on your behalf and explain the results. 
 
 - [GitHub Copilot SDK](https://github.com/github/copilot-sdk)
 - [Copilot CLI Docs](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line)
-
 
 ## Author
 

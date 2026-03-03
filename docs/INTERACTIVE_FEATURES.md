@@ -92,6 +92,36 @@ The AI assistant is configured with a comprehensive system message that:
 - Specifies proactive behavior (check clusters on startup)
 - Provides guidance on tool usage
 - Encourages conversational and helpful interactions
+- Injects the active specialist agent's prompt when a persona is selected
+
+### 5. Specialist Agent Personas
+
+Kopilot ships four domain-focused AI personas built on the Copilot SDK `CustomAgentConfig` API. Each persona has a tailored system prompt and curated example set, and always uses the premium model.
+
+| Agent | Command | Focus area |
+| ------- | ------- | ---------- |
+| `default` | _(omit flag)_ | General Kubernetes operations |
+| `debugger` 🔍 | `--agent debugger` | Root cause analysis, log correlation, pod failures |
+| `security` 🛡️ | `--agent security` | RBAC, privilege escalation, network policies |
+| `optimizer` ⚡ | `--agent optimizer` | Resource right-sizing, HPA/VPA, cost optimization |
+| `gitops` 🔄 | `--agent gitops` | Flux/ArgoCD sync status, drift detection |
+
+**Startup:**
+
+```bash
+kopilot --agent debugger
+kopilot --agent security --interactive
+```
+
+**Runtime switching (no restart needed):**
+
+```text
+❯ /agent list          # show active agent and roster
+❯ /agent debugger      # switch to Debugger specialist
+❯ /agent default       # return to generalist persona
+```
+
+See [AGENTS.md](AGENTS.md) for full agent descriptions, example prompts, and model selection behaviour.
 
 ## Tools Available
 
@@ -102,6 +132,21 @@ The AI assistant is configured with a comprehensive system message that:
 | `compare_clusters` | Compares multiple clusters side by side | `contexts` (array) |
 | `check_all_clusters` | Checks health of all clusters in parallel | None |
 | `kubectl_exec` | Executes kubectl commands | `context` (string), `args` (array) |
+
+## Runtime Commands
+
+All commands are available in the interactive prompt:
+
+| Command | Description |
+| ------- | ----------- |
+| `/help` | Show all available runtime commands |
+| `exit`, `quit` | Exit Kopilot |
+| `/mode`, `/status` | Show current execution mode |
+| `/readonly` | Switch to 🔒 read-only mode |
+| `/interactive` | Switch to 🔓 interactive mode |
+| `/agent` | Show active agent and roster |
+| `/agent list` | Same as `/agent` |
+| `/agent <name>` | Switch to a specialist agent (`debugger`, `security`, `optimizer`, `gitops`, `default`) |
 
 ## Technical Implementation
 

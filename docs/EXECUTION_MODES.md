@@ -13,12 +13,14 @@ By default, Kopilot runs in **read-only mode** to prevent accidental modificatio
 **Purpose**: Maximum safety for production environments and exploratory use.
 
 **Behavior**:
+
 - Blocks all write operations
 - Allows read-only kubectl commands (get, describe, logs, etc.)
 - Returns clear error message when write operation is attempted
 - No confirmation prompts needed
 
 **Allowed Commands**:
+
 - `get` - List resources
 - `describe` - Show detailed information
 - `logs` - View container logs
@@ -33,12 +35,14 @@ By default, Kopilot runs in **read-only mode** to prevent accidental modificatio
 - `auth` - Authentication commands
 
 **Blocked Commands**:
+
 - `scale`, `delete`, `apply`, `patch`, `edit`
 - `create`, `replace`, `rollout`
 - `drain`, `cordon`, `uncordon`, `taint`
 - Any other command that modifies cluster state
 
 **Example**:
+
 ```bash
 # Start in read-only mode (default)
 ./bin/kopilot
@@ -56,6 +60,7 @@ Use /interactive to enable write operations
 **Purpose**: Safe execution of write operations with explicit user confirmation.
 
 **Behavior**:
+
 - Allows all kubectl commands
 - Shows the exact command before execution
 - Requires user confirmation (yes/no) for write operations
@@ -63,6 +68,7 @@ Use /interactive to enable write operations
 - Clear distinction between read and write operations
 
 **Example**:
+
 ```bash
 # Start in interactive mode
 ./bin/kopilot --interactive
@@ -78,6 +84,7 @@ deployment.apps/nginx scaled
 ```
 
 **Cancellation**:
+
 ```bash
 > delete old pods in namespace test
 
@@ -94,6 +101,7 @@ You can switch execution modes during a session without restarting kopilot:
 
 ### Commands
 
+- `/help` - Show all available commands
 - `/readonly` - Switch to read-only mode
 - `/interactive` - Switch to interactive mode  
 - `/mode` or `/status` - Display current mode
@@ -142,6 +150,7 @@ Do you want to proceed? (yes/no): yes
 ### Read-Only Mode
 
 **Best for**:
+
 - Production environment monitoring
 - Cluster health checks
 - Troubleshooting and investigation
@@ -151,6 +160,7 @@ Do you want to proceed? (yes/no): yes
 - Demo and presentation environments
 
 **Example Scenarios**:
+
 - "Check if all pods are running"
 - "Show me logs for the api service"
 - "What's the status of nodes in prod?"
@@ -159,6 +169,7 @@ Do you want to proceed? (yes/no): yes
 ### Interactive Mode
 
 **Best for**:
+
 - Operational tasks requiring modifications
 - Scaling applications
 - Restarting failed pods
@@ -167,6 +178,7 @@ Do you want to proceed? (yes/no): yes
 - Controlled maintenance windows
 
 **Example Scenarios**:
+
 - "Scale the web service to handle more traffic"
 - "Restart the crashed pods"
 - "Update the ConfigMap and rollout restart"
@@ -177,6 +189,7 @@ Do you want to proceed? (yes/no): yes
 ### Explicit Command Display
 
 Before executing any write operation in interactive mode, kopilot shows:
+
 1. The exact kubectl command that will run
 2. The cluster context being targeted
 3. A warning that cluster state will be modified
@@ -184,6 +197,7 @@ Before executing any write operation in interactive mode, kopilot shows:
 ### Clear Blocking Messages
 
 In read-only mode, blocked operations show:
+
 1. The attempted command
 2. Why it was blocked
 3. How to enable write operations if needed
@@ -191,14 +205,33 @@ In read-only mode, blocked operations show:
 ### Mode Indicators
 
 Visual feedback shows current mode at all times:
+
 - 🔒 icon for read-only mode
 - 🔓 icon for interactive mode
 - Mode name displayed in startup banner
 - Mode-specific instructions on launch
 
+## Relationship to Specialist Agents
+
+Execution modes and [specialist agent personas](AGENTS.md) are **fully independent** layers:
+
+- The **execution mode** (read-only / interactive) controls whether kubectl write operations are permitted at the tool-execution layer
+- The **agent persona** controls the AI's system prompt, reasoning focus, and model selection
+
+Switching to a security or debugging agent does **not** enable write operations — the default read-only protection remains active. You can combine any agent with any mode:
+
+```bash
+# Security audit — safe read-only (default), cannot accidentally change anything
+kopilot --agent security
+
+# Apply optimizer recommendations — interactive mode for write operations
+kopilot --agent optimizer --interactive
+```
+
 ## Best Practices
 
 1. **Start with Read-Only**: Unless you specifically need to make changes, use read-only mode
+
 2. **Review Before Confirming**: Always read the displayed command carefully before typing "yes"
 3. **Use Specific Contexts**: Be explicit about which cluster you're targeting
 4. **Switch Modes Intentionally**: Use runtime commands to switch modes only when needed
@@ -207,6 +240,7 @@ Visual feedback shows current mode at all times:
 ## Implementation Details
 
 The execution mode system:
+
 - Validates commands against a whitelist of read-only kubectl commands
 - Requires user input (buffered reader) for confirmation in interactive mode
 - Returns descriptive errors with guidance when blocking operations
@@ -216,6 +250,7 @@ The execution mode system:
 ## Testing
 
 Execution modes are fully tested with:
+
 - Unit tests for command classification
 - Mode switching behavior validation
 - State management verification

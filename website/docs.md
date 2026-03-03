@@ -4,8 +4,6 @@ title: Documentation
 permalink: /docs/
 ---
 
-# Documentation
-
 ## Getting Started
 
 Kopilot is an AI-powered assistant for Kubernetes cluster management. This guide will help you get up and running in minutes.
@@ -21,6 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/e9169/kopilot/main/install.sh | bas
 ```
 
 This will:
+
 - Auto-detect your OS and architecture (Linux, macOS, Windows)
 - Download the latest release from GitHub
 - Install to `/usr/local/bin` or `~/.local/bin`
@@ -70,6 +69,7 @@ copilot auth login
 Kopilot works with **any model available through your GitHub Copilot subscription**.
 
 **Default configuration:**
+
 - **Cost-effective model** (default: gpt-4o-mini) - Used for simple queries and status checks
 - **Premium model** (default: gpt-4o) - Automatically selected for troubleshooting and complex operations
 
@@ -98,7 +98,7 @@ No API key configuration needed - authentication is handled through GitHub Copil
 
 Kopilot offers two execution modes to balance safety and functionality:
 
-**Read-Only Mode (Default - Recommended)**
+#### 🔒 Read-Only Mode (Default — Recommended)
 
 ```bash
 # Start in read-only mode (safest, default)
@@ -110,7 +110,7 @@ kopilot
 - Prevents accidental cluster modifications
 - No confirmation prompts needed
 
-**Interactive Mode**
+#### 🔓 Interactive Mode
 
 ```bash
 # Start in interactive mode
@@ -122,11 +122,11 @@ kopilot --interactive
 - Requires explicit yes/no approval for changes
 - Read-only commands execute immediately
 
-**Runtime Mode Switching**
+#### Runtime Mode Switching
 
 You can switch modes during a session without restarting:
 
-```
+```text
 ❯ /readonly          # Switch to read-only mode
 ❯ /interactive       # Switch to interactive mode
 ❯ /mode             # Show current mode
@@ -139,13 +139,15 @@ kopilot
 ```
 
 Example queries:
+
 - "Show me all pods in the default namespace"
 - "What's the status of my deployments?"
 - "Why is my nginx pod crashing?"
 - "Compare resource usage across namespaces"
 
 For write operations, switch to interactive mode:
-```
+
+```text
 ❯ /interactive
 ❯ scale nginx deployment to 5 replicas
 ⚠️  Write Operation: kubectl scale deployment nginx --replicas=5
@@ -159,6 +161,7 @@ Do you want to proceed? (yes/no): yes
 ### 🚀 Smart Deployments
 
 Kopilot can:
+
 - Create deployments from natural language descriptions
 - Apply best practices automatically
 - Suggest resource limits and requests
@@ -167,6 +170,7 @@ Kopilot can:
 ### 🔍 Intelligent Debugging
 
 Get AI-powered help with:
+
 - Pod crash loops
 - Scheduling issues
 - Network connectivity problems
@@ -176,27 +180,58 @@ Get AI-powered help with:
 
 Kopilot provides two safety modes:
 
-**🔒 Read-Only Mode (Default)**
+#### 🔒 Read-Only Mode (Default)
+
 - Blocks all write operations for maximum safety
 - Allows monitoring, querying, and troubleshooting
 - Best for production environments
 - No risk of accidental changes
 
-**🔓 Interactive Mode**
+#### 🔓 Interactive Mode
+
 - Enables write operations with confirmation
 - Shows exact command before execution
 - Requires explicit approval (yes/no)
 - Can be started with `--interactive` flag or switched at runtime with `/interactive`
 
-**Runtime Commands:**
+#### Runtime Commands
+
+- `/help` - Show all available commands
 - `/readonly` - Switch to read-only mode
 - `/interactive` - Switch to interactive mode
 - `/mode` - Show current execution mode
+- `/agent` or `/agent list` - Show active agent and roster
+- `/agent <name>` - Switch specialist agent
 
 See the [Execution Modes documentation](https://github.com/e9169/kopilot/blob/main/docs/EXECUTION_MODES.md) for detailed information
-- Suggest cost optimizations
-- Detect unused resources
-- Monitor resource trends
+
+### 🎭 Specialist Agent Personas
+
+Kopilot ships four domain-focused AI personas that sharpen the assistant for specific operational areas. Start with `--agent <name>` or switch mid-session with `/agent <name>`.
+
+**🔍 Debugger** (`--agent debugger`)
+Root cause analysis, log correlation, and pod failure diagnosis. Starts with events and recent changes, correlates pod status and logs, traces failure chains.
+
+- *Try: "Why is my pod in CrashLoopBackOff?" / "Diagnose why my service returns 503s"*
+
+**🛡️ Security** (`--agent security`)
+RBAC auditing, privilege escalation detection, and network policy review. Reports findings with CRITICAL/HIGH/MEDIUM/LOW severity and remediation steps.
+
+- *Try: "Audit RBAC roles for overprivileged accounts" / "Find pods running as root"*
+
+**⚡ Optimizer** (`--agent optimizer`)
+Resource right-sizing, HPA/VPA recommendations, and cost optimization. Identifies over-provisioned workloads, missing limits, and idle deployments.
+
+- *Try: "Which pods have no resource limits?" / "Find idle or low-traffic services"*
+
+**🔄 GitOps** (`--agent gitops`)
+Flux and ArgoCD sync status, drift detection, and reconciliation diagnostics. Always distinguishes desired state (Git) from actual state (cluster).
+
+- *Try: "Are all Flux Kustomizations synced?" / "Find resources modified outside of GitOps"*
+
+All specialist agents always use the premium model for the best reasoning quality. Agents and execution modes are independent — read-only protection is always enforced regardless of active agent.
+
+See the [Agents documentation](https://github.com/e9169/kopilot/blob/main/docs/AGENTS.md) for full details.
 
 ### 🔐 Security
 
@@ -265,15 +300,18 @@ kopilot "export all configmaps in the production namespace"
 
 ### Common Issues
 
-**"Cannot connect to cluster"**
+#### "Cannot connect to cluster"
+
 - Ensure your kubeconfig is properly configured
 - Check that `kubectl` works: `kubectl get nodes`
 
-**"GitHub Copilot not authenticated"**
+#### "GitHub Copilot not authenticated"
+
 - Run: `copilot auth login`
 - Ensure you have an active GitHub Copilot subscription
 
-**"Model not responding"**
+#### "Model not responding"
+
 - Check your internet connection
 - Verify your API key is valid
 - Try a different model
