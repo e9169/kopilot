@@ -313,7 +313,7 @@ kopilot "export all configmaps in the production namespace"
 #### "Model not responding"
 
 - Check your internet connection
-- Verify your API key is valid
+- Ensure GitHub Copilot CLI is authenticated: run `copilot auth status` (or re-run `copilot auth login`)
 - Try a different model
 
 ### Getting Help
