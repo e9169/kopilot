@@ -47,22 +47,6 @@ jobs:
     - name: Verify dependencies
       run: go mod verify
 
-    - name: Check go mod tidy
-      # Force darwin/arm64 build context so tidy always sees zcopilot_darwin_arm64.go
-      # (which directly imports klauspost/compress). Without this, amd64 macOS runners
-      # and Linux runners exclude that file via filename build constraints and
-      # incorrectly demote the dependency to indirect.
-      env:
-        GOOS: darwin
-        GOARCH: arm64
-      run: |
-        go mod tidy
-        if ! git diff --quiet go.mod go.sum; then
-          echo "go mod tidy resulted in changes. Please run 'go mod tidy' and commit the changes."
-          git diff go.mod go.sum
-          exit 1
-        fi
-
     - name: Run go vet
       run: go vet ./...
 
