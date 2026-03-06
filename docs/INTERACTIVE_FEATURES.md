@@ -21,23 +21,18 @@ Kopilot provides a `check_all_clusters` tool that can quickly check all clusters
 ```text
 > check all clusters
 
-🚀 Kopilot - Kubernetes Cluster Assistant
+� CLUSTER HEALTH SUMMARY:
+10 of 11 clusters are healthy ✅
 
-## 📊 Cluster Health Summary
+⚠️ ISSUES FOUND:
+1. rpi cluster - UNREACHABLE
+   Connection timeout to 192.168.1.158:6443
+   Cluster may be offline or network unreachable
 
-**10 of 11 clusters are healthy ✅**
-
-### ⚠️  Issues Found:
-
-**1. rpi cluster - UNREACHABLE**
-   - Connection timeout to 192.168.1.158:6443
-   - Cluster may be offline or network unreachable
-
-### ✅ Healthy Clusters:
-
+✅ HEALTHY CLUSTERS:
 All 10 enterprise clusters are operational:
-- SEML Region: dev-mgmt-01 (2 nodes), prod-wrk-01 (6 nodes), dev-wrk-01 (6 nodes), prod-mgmt-01 (6 nodes), prod-test-01 (6 nodes)
-- US Region: dev-mgmt-01 (2 nodes), prod-test-01 (6 nodes), prod-wrk-01 (6 nodes), dev-wrk-01 (6 nodes), prod-mgmt-01 (6 nodes)
+SEML Region: dev-mgmt-01 (2 nodes), prod-wrk-01 (6 nodes), dev-wrk-01 (6 nodes), prod-mgmt-01 (6 nodes), prod-test-01 (6 nodes)
+US Region: dev-mgmt-01 (2 nodes), prod-test-01 (6 nodes), prod-wrk-01 (6 nodes), dev-wrk-01 (6 nodes), prod-mgmt-01 (6 nodes)
 
 All nodes are in Ready status, all clusters running Kubernetes v1.31.4.
 ```

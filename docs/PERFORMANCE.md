@@ -146,12 +146,10 @@ Performance scales linearly with the number of clusters, while parallel executio
 Users see cluster health status almost immediately instead of waiting for sequential checks:
 
 ```text
-🚀 Kopilot - Kubernetes Cluster Assistant
-
 🏥 check_all_clusters...
-## Cluster Health Summary
 
-**10 out of 11 clusters are healthy** ✅
+📊 CLUSTER HEALTH SUMMARY:
+10 out of 11 clusters are healthy ✅
 ...
 ```
 
@@ -169,7 +167,7 @@ Example response time:
 > Compare the production clusters
 🏥 check_all_clusters... [3 seconds]
 
-Here's a comparison of your 5 production clusters...
+Here is a comparison of your 5 production clusters...
 ```
 
 ## System Message Update
