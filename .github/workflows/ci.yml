@@ -48,6 +48,11 @@ jobs:
       run: go mod verify
 
     - name: Check go mod tidy
+      # Only run on macOS: the repo contains darwin-specific generated files
+      # (zcopilot_darwin_arm64.go) that import klauspost/compress. On Linux
+      # those files are excluded by build constraints, so go mod tidy would
+      # incorrectly flag the dependency as unused.
+      if: matrix.os == 'macos-latest'
       run: |
         go mod tidy
         if ! git diff --quiet go.mod go.sum; then
