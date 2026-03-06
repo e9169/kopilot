@@ -1,0 +1,23 @@
+bug:
+  - - any-glob-to-any-file:
+        - ".*\\b(bug|crash|error|fail|broken|panic|segfault|regression)\\b.*"
+
+documentation:
+  - - any-glob-to-any-file:
+        - ".*\\b(doc|docs|documentation|readme|typo|spelling|grammar)\\b.*"
+
+question:
+  - - any-glob-to-any-file:
+        - ".*\\b(question|how to|how do|help|confused|unclear|explain)\\b.*"
+
+security:
+  - - any-glob-to-any-file:
+        - ".*\\b(security|vulnerability|cve|exploit|auth|permission|secret|token|credential)\\b.*"
+
+performance:
+  - - any-glob-to-any-file:
+        - ".*\\b(performance|slow|latency|timeout|memory|cpu|leak|optimize)\\b.*"
+
+kubernetes:
+  - - any-glob-to-any-file:
+        - ".*\\b(kubernetes|kubectl|kubeconfig|k8s|cluster|pod|node|namespace|deployment|service|ingress|helm)\\b.*"
