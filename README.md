@@ -43,11 +43,9 @@ An interactive agent built with the **official GitHub Copilot SDK** in Go that p
 - 🛠️ **kubectl Integration**: Execute kubectl commands through natural language
 - 🔐 **Safe by Default**: Read-only mode protects against accidental changes
 - 🔓 **Interactive Mode**: Confirmation prompts for write operations with clear visibility
-- ⚡ **Fast Health Checks**: Check all clusters in parallel with the check_all_clusters tool
-- 📋 **Pretty Output**: Markdown tables and structured formatting for easy reading
-- 💎 **Persistent Quota Display**: Real-time Copilot Premium request quota with color-coded indicators
-- � **Modern ASCII Logo**: Stylized Kopilot branding with Kubernetes-themed colors (cyan/red)
+- 💎 **Persistent Quota Display**: Copilot Premium request quota shown in the prompt prefix with color-coded indicators
 - 💡 **Dynamic Example Suggestions**: Shows 3 random example prompts on each launch to help users get started
+- 📄 **Plain-Text Output**: Responses use emoji + uppercase headers (e.g. `🔵 STATUS:`, `⚠️ ISSUES:`) for clean, readable output without markdown tables or bold formatting
 - 🎯 **Type-Safe Tools**: Uses Copilot SDK's DefineTool for automatic schema generation
 - 💰 **Smart Cost Optimization**: Intelligent model selection based on task complexity (see [docs/MODEL_SELECTION.md](docs/MODEL_SELECTION.md))
   - Uses `gpt-4o-mini` for simple queries (list, status, health checks)
@@ -335,11 +333,10 @@ export KUBECONFIG="/path/to/custom/kubeconfig"
 
 When you start kopilot, it displays:
 
-- An ASCII art logo with Kopilot branding
 - Connection status and cluster information
 - Current execution mode (read-only or interactive)
 - Active specialist agent (if not default)
-- **3 random example prompts** to help you get started
+- 3 random example prompts to help you get started
 
 You can then interact naturally:
 
