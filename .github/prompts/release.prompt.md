@@ -95,12 +95,12 @@ After workflow completes, check:
 open "https://github.com/e9169/kopilot/releases/tag/v<VERSION>"
 
 # Expected artifacts:
-# - kopilot_<VERSION>_linux_amd64.tar.gz
-# - kopilot_<VERSION>_linux_arm64.tar.gz
-# - kopilot_<VERSION>_darwin_amd64.tar.gz
-# - kopilot_<VERSION>_darwin_arm64.tar.gz
-# - kopilot_<VERSION>_windows_amd64.zip
-# - kopilot_<VERSION>_windows_arm64.zip
+# - kopilot_v<VERSION>_linux_amd64.tar.gz
+# - kopilot_v<VERSION>_linux_arm64.tar.gz
+# - kopilot_v<VERSION>_darwin_amd64.tar.gz
+# - kopilot_v<VERSION>_darwin_arm64.tar.gz
+# - kopilot_v<VERSION>_windows_amd64.zip
+# - kopilot_v<VERSION>_windows_arm64.zip
 # - checksums.txt
 # - *.sbom files
 # - *.sig files (signatures)
@@ -131,8 +131,8 @@ brew tap e9169/tap
 brew install kopilot
 kopilot --version
 
-# Or test direct download
-curl -L https://github.com/e9169/kopilot/releases/download/v<VERSION>/kopilot_$(uname -s)_$(uname -m).tar.gz | tar xz
+# Or test direct download (replace linux_amd64 with your OS and architecture, e.g. darwin_arm64)
+curl -L https://github.com/e9169/kopilot/releases/download/v<VERSION>/kopilot_v<VERSION>_linux_amd64.tar.gz | tar xz
 ./kopilot --version
 ```
 

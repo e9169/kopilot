@@ -36,10 +36,10 @@ The installer supports:
 3. Extract the archive:
    ```bash
    # Linux/macOS
-   tar -xzf kopilot_VERSION_OS_ARCH.tar.gz
+   tar -xzf kopilot_vVERSION_OS_ARCH.tar.gz
    
    # Windows
-   unzip kopilot_VERSION_windows_ARCH.zip
+   unzip kopilot_vVERSION_windows_ARCH.zip
    ```
 4. Move the binary to a directory in your PATH:
    ```bash
