@@ -121,7 +121,7 @@ else
         INSTALL_DIR="/usr/local/bin"
     else
         # Check if user wants to use sudo
-        if command -v sudo >/dev/null 2>&1 && [ -t 0 ]; then
+        if command -v sudo >/dev/null 2>&1 && [[ -t 0 ]]; then
             echo -e "${YELLOW}→${NC} Installation requires sudo access for /usr/local/bin"
             echo -n "  Use sudo to install to /usr/local/bin? [Y/n] "
             read -r response
