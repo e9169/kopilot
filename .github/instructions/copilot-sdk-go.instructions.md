@@ -7,7 +7,7 @@ name: "GitHub Copilot SDK Go Instructions"
 ## Core Principles
 
 - The SDK is in technical preview and may have breaking changes
-- Requires Go 1.21 or later
+- Requires Go 1.26 or later (see `go.mod` for the exact minimum version)
 - Requires GitHub Copilot CLI installed and in PATH
 - Uses goroutines and channels for concurrent operations
 - No external dependencies beyond the standard library

@@ -220,6 +220,7 @@ make coverage         # Generate coverage report
 ✅ Update documentation after code changes (especially for user-facing features)
 ✅ Run tests and build after code changes to verify integrity
 ✅ Automatically fill PR templates when creating pull requests
+✅ **When changing dependency versions in `go.mod`, update the prerequisites in `README.md` (Prerequisites section and Compatibility Matrix) and `docs/INSTALLATION.md` to match**
 
 ### DON'T
 ❌ Hardcode version numbers (use git tags)
