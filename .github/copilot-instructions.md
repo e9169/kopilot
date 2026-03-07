@@ -14,7 +14,7 @@ This document provides context and guidelines for GitHub Copilot when working wi
 
 ### Technology Stack
 - **Language**: Go 1.26+
-- **Framework**: GitHub Copilot SDK (`github.com/github/copilot-sdk/go@v0.1.29`)
+- **Framework**: GitHub Copilot SDK (`github.com/github/copilot-sdk/go@v0.1.30`)
 - **Kubernetes**: `k8s.io/client-go@v0.35.2`
 - **Target Platforms**: Linux, macOS, Windows (amd64/arm64)
 

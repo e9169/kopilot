@@ -235,7 +235,7 @@ After installing Kopilot:
 
 1. Install and authenticate GitHub Copilot CLI (required)
    ```bash
-   npm install -g @github/copilot@0.0.410
+   npm install -g @github/copilot@0.0.420
    copilot auth login
    ```
 
