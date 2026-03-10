@@ -51,6 +51,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  security   RBAC auditing and privilege escalation detection\n")
 		fmt.Fprintf(os.Stderr, "  optimizer  Resource right-sizing and cost optimization\n")
 		fmt.Fprintf(os.Stderr, "  gitops     Flux/ArgoCD sync status and drift detection\n")
+		fmt.Fprintf(os.Stderr, "  sanitizer  Cluster linting, best-practice scoring, and compliance grading\n")
 		fmt.Fprintf(os.Stderr, "\nRuntime Commands:\n")
 		fmt.Fprintf(os.Stderr, "  /readonly          Switch to read-only mode\n")
 		fmt.Fprintf(os.Stderr, "  /interactive       Switch to interactive mode\n")
@@ -66,6 +67,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  kopilot --agent security         # Start as security auditor\n")
 		fmt.Fprintf(os.Stderr, "  kopilot --agent optimizer        # Start as optimization specialist\n")
 		fmt.Fprintf(os.Stderr, "  kopilot --agent gitops           # Start as GitOps specialist\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --agent sanitizer        # Start as cluster sanitizer\n")
 		fmt.Fprintf(os.Stderr, "  kopilot -v                       # Start with verbose logging\n")
 		fmt.Fprintf(os.Stderr, "  KUBECONFIG=./custom kopilot      # Use custom kubeconfig\n")
 	}

@@ -53,7 +53,7 @@ func TestParseAgentType(t *testing.T) {
 
 func TestAllAgentNames(t *testing.T) {
 	names := allAgentNames()
-	want := []string{"default", "debugger", "security", "optimizer", "gitops"}
+	want := []string{"default", "debugger", "security", "optimizer", "gitops", "sanitizer"}
 	if len(names) != len(want) {
 		t.Fatalf("allAgentNames() returned %d names, want %d", len(names), len(want))
 	}

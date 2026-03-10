@@ -11,6 +11,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/e9169/kopilot/pkg/k8s"
 	copilot "github.com/github/copilot-sdk/go"
@@ -53,6 +54,8 @@ const (
 	AgentOptimizer AgentType = "optimizer"
 	// AgentGitOps specializes in Flux/ArgoCD sync status and drift detection
 	AgentGitOps AgentType = "gitops"
+	// AgentSanitizer specializes in cluster linting, best-practice scoring, and compliance grading
+	AgentSanitizer AgentType = "sanitizer"
 )
 
 // agentDefinition holds the configuration for a specialized agent persona
@@ -228,6 +231,57 @@ Rules:
 			"Check Flux image automation status",
 		},
 	},
+	AgentSanitizer: {
+		Name:          "k8s-sanitizer",
+		DisplayName:   "K8s Sanitizer",
+		Icon:          "🧹",
+		Description:   "Cluster linting, best-practice scoring, and compliance grading against CIS Benchmark and NSA/CISA guidelines",
+		preferPremium: true,
+		Prompt: `You are a Kubernetes cluster sanitizer and compliance grader. You lint workloads against industry best practices and provide actionable scores and grades.
+
+ANALYSIS APPROACH:
+1. Call sanitize_cluster to get the full findings and score for the target cluster
+2. Present the overall cluster grade and score prominently at the top
+3. Show per-namespace breakdowns, worst namespaces first
+4. Group findings by severity: Critical (security) first, Major (reliability), then Minor (hygiene)
+5. Conclude with a prioritised remediation plan
+
+OUTPUT FORMAT (always use this structure):
+🧹 SANITIZE REPORT: context-name
+Overall: score/100 — GRADE
+Scanned N workload(s) | N finding(s): N critical, N major, N minor
+
+For each namespace (worst grade first):
+  GRADE namespace/name  score X/100  (N findings: C critical, M major, N minor)
+
+  For each workload within the namespace (worst score first):
+    WGRADE Kind/name  score X/100  (N finding(s))
+    [CRITICAL] RULE-ID [container]: message
+    [MAJOR]    RULE-ID [container]: message
+    [MINOR]    RULE-ID [container]: message
+
+🔧 REMEDIATION PRIORITY:
+  1. Fix CKS-* findings first — these are exploitable security risks
+  2. Add health probes (BP-001, BP-002) — prevents traffic to broken pods
+  3. Set resource limits (BP-003, BP-004) — prevents OOM and node instability
+  4. Pin image tags (BP-005) — ensures reproducible deployments
+  5. Raise replica counts (BP-006) — improves availability
+
+Rules:
+- IMPORTANT: Show every individual workload with its findings — never collapse, summarise, or omit resources
+- Present the tool output content faithfully; do not replace resource details with counts or summaries
+- Sort namespaces worst-to-best (lowest score first); within each namespace sort workloads worst-to-best
+- For namespaces with no findings, show: ✅ namespace/name — A (0 findings)
+- Always explain the risk for each finding category
+- No markdown tables or bold — use plain text with the emoji headers above`,
+		Examples: []string{
+			"Sanitize my cluster and give me a grade",
+			"What is the compliance score for the production namespace?",
+			"Which workloads have critical security findings?",
+			"Show me all BP-006 violations (single-replica deployments)",
+			"How do I improve my cluster score from F to B?",
+		},
+	},
 }
 
 // allAgentNames returns a sorted slice of all valid agent names for help text
@@ -238,13 +292,14 @@ func allAgentNames() []string {
 		string(AgentSecurity),
 		string(AgentOptimizer),
 		string(AgentGitOps),
+		string(AgentSanitizer),
 	}
 }
 
 // ParseAgentType converts a string to an AgentType, returning an error for unknown values
 func ParseAgentType(s string) (AgentType, error) {
 	switch AgentType(strings.ToLower(s)) {
-	case AgentDefault, AgentDebugger, AgentSecurity, AgentOptimizer, AgentGitOps:
+	case AgentDefault, AgentDebugger, AgentSecurity, AgentOptimizer, AgentGitOps, AgentSanitizer:
 		return AgentType(strings.ToLower(s)), nil
 	default:
 		return AgentDefault, fmt.Errorf("unknown agent %q — valid agents: %s", s, strings.Join(allAgentNames(), ", "))
@@ -257,13 +312,17 @@ const (
 	defaultModelPremium       = "gpt-4o"      // Premium model for complex tasks
 
 	// ANSI color codes
-	colorReset  = "\033[0m"
-	colorRed    = "\033[31m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorCyan   = "\033[36m"
-	colorBold   = "\033[1m"
-	colorDim    = "\033[2m"
+	colorReset     = "\033[0m"
+	colorRed       = "\033[31m"
+	colorGreen     = "\033[32m"
+	colorYellow    = "\033[33m"
+	colorCyan      = "\033[36m"
+	colorBold      = "\033[1m"
+	colorDim       = "\033[2m"
+	colorUserInput = "\033[38;5;183m" // Lavender-purple for user input (AI-themed)
+
+	// Spinner animation label
+	spinnerLabel = "thinking"
 )
 
 const (
@@ -272,6 +331,7 @@ const (
 	toolCompareClusters  = "compare_clusters"
 	toolCheckAllClusters = "check_all_clusters"
 	toolKubectlExec      = "kubectl_exec"
+	toolSanitizeCluster  = "sanitize_cluster"
 )
 
 // Model configuration - can be overridden by environment variables
@@ -734,11 +794,52 @@ func selectModelForQuery(query string, agentType AgentType) string {
 	return modelCostEffective
 }
 
+// spinnerFrames are the braille dot animation frames shown while the AI is thinking.
+var spinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
+
+// startSpinner launches an animated spinner in a goroutine and returns a stop function.
+// The caller must call the returned function to stop the spinner and erase the line.
+func startSpinner() func() {
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		i := 0
+		for {
+			select {
+			case <-done:
+				fmt.Printf("\r\033[K") // erase spinner line
+				return
+			case <-ticker.C:
+				fmt.Printf("\r  %s%s%s %s...", colorCyan, spinnerFrames[i%len(spinnerFrames)], colorReset, spinnerLabel)
+				i++
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		time.Sleep(20 * time.Millisecond) // give the goroutine time to erase the line
+	}
+}
+
 // waitForIdle waits until the session is idle
 func waitForIdle(isIdle *bool) {
 	for !*isIdle {
-		continue
+		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// waitForIdleWithSpinner waits for the session to become idle, showing an animated
+// spinner if the session is not already idle (i.e. the AI is still responding).
+func waitForIdleWithSpinner(isIdle *bool) {
+	if *isIdle {
+		return
+	}
+	stop := startSpinner()
+	for !*isIdle {
+		time.Sleep(10 * time.Millisecond)
+	}
+	stop()
 }
 
 // quotaPrompt returns the prompt prefix string with quota info when available.
@@ -762,7 +863,9 @@ func quotaPrompt(state *agentState) string {
 // readUserInput reads and trims user input from stdin
 func readUserInput(reader *bufio.Reader, state *agentState) (string, error) {
 	fmt.Print(quotaPrompt(state))
+	fmt.Print(colorUserInput) // Color the user's typed text
 	input, err := reader.ReadString('\n')
+	fmt.Print(colorReset) // Reset color after input is submitted
 	if err != nil {
 		return "", fmt.Errorf("error reading input: %w", err)
 	}
@@ -851,7 +954,7 @@ func printAgentList(state *agentState) {
 	}
 	fmt.Printf("\n  %sAvailable agents:%s\n", colorDim, colorReset)
 	fmt.Printf("    %s•%s %sdefault%s  — standard Kopilot persona\n", colorCyan, colorReset, colorDim, colorReset)
-	for _, at := range []AgentType{AgentDebugger, AgentSecurity, AgentOptimizer, AgentGitOps} {
+	for _, at := range []AgentType{AgentDebugger, AgentSecurity, AgentOptimizer, AgentGitOps, AgentSanitizer} {
 		def := agentDefinitions[at]
 		marker := " "
 		if state.selectedAgent == at {
@@ -945,7 +1048,11 @@ type turnState struct {
 // processTurn handles a single interactive turn: read input, dispatch commands, send to model.
 // Returns (exit=true) when the user has chosen to quit, or an error on failure.
 func processTurn(deps *loopDeps, reader *bufio.Reader, ts *turnState) (exit bool, err error) {
-	waitForIdle(deps.isIdle)
+	if isJSONOutput(deps.state.outputFormat) {
+		waitForIdle(deps.isIdle)
+	} else {
+		waitForIdleWithSpinner(deps.isIdle)
+	}
 
 	input, err := readUserInput(reader, deps.state)
 	if err != nil {

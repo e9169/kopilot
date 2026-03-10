@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/e9169/kopilot/pkg/k8s"
@@ -22,6 +23,7 @@ func defineTools(k8sProvider *k8s.Provider, state *agentState) []copilot.Tool {
 		defineCompareClustersTool(k8sProvider, state),
 		defineCheckAllClustersTool(k8sProvider, state),
 		defineKubectlExecTool(k8sProvider, state),
+		defineSanitizeClusterTool(k8sProvider, state),
 	}
 	// Ensure all tool schemas are valid for all models/APIs.
 	// Most LLM APIs (OpenAI, Anthropic, Google, etc.) require object schemas
@@ -656,4 +658,178 @@ func buildKubectlTextResult(clusterName, contextName, fullCommand string, output
 	}
 
 	return result.String(), nil
+}
+
+// SanitizeClusterParams defines parameters for sanitize_cluster
+type SanitizeClusterParams struct {
+	Context       string `json:"context" jsonschema:"The context name of the cluster to sanitize (from list_clusters)"`
+	Namespace     string `json:"namespace,omitempty" jsonschema:"Optional: restrict the scan to a specific namespace; leave empty to scan all non-system namespaces"`
+	IncludeSystem bool   `json:"include_system,omitempty" jsonschema:"If true, include system namespaces (kube-system, kube-public, kube-node-lease) in the scan"`
+}
+
+func defineSanitizeClusterTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
+	return copilot.DefineTool(
+		toolSanitizeCluster,
+		"Lint all Deployments, StatefulSets, and DaemonSets in a cluster against Kubernetes best practices and security rules (CIS Benchmark, NSA/CISA guidelines). Returns a 0-100 score with an A-F grade, per-namespace breakdowns, and detailed findings per workload.",
+		func(params SanitizeClusterParams, inv copilot.ToolInvocation) (any, error) {
+			ctx := context.Background()
+			report, err := k8sProvider.SanitizeCluster(ctx, params.Context, params.Namespace, params.IncludeSystem)
+			if err != nil {
+				return nil, fmt.Errorf("failed to sanitize cluster: %w", err)
+			}
+
+			if isJSONOutput(state.outputFormat) {
+				return report, nil
+			}
+
+			return formatSanitizeResult(report), nil
+		},
+	)
+}
+
+// formatSanitizeResult formats a SanitizeResult as human-readable text
+func formatSanitizeResult(report *k8s.SanitizeResult) string {
+	var sb strings.Builder
+
+	icon := sanitizeGradeIcon(report.Grade)
+	fmt.Fprintf(&sb, "Cluster Sanitize Report: %s\n", report.Context)
+	sb.WriteString(strings.Repeat("=", 80) + "\n\n")
+	fmt.Fprintf(&sb, "%s CLUSTER GRADE: %s  (score %d/100)\n", icon, report.Grade, report.Score)
+	fmt.Fprintf(&sb, "   Scanned %d workload(s)  |  %d finding(s): %d critical, %d major, %d minor\n\n",
+		report.TotalWorkloads, report.TotalFindings, report.CriticalCount, report.MajorCount, report.MinorCount)
+
+	for _, ns := range report.Namespaces {
+		nsIcon := sanitizeGradeIcon(ns.Grade)
+		fmt.Fprintf(&sb, "%s namespace/%s  grade %s  score %d/100\n",
+			nsIcon, ns.Namespace, ns.Grade, ns.Score)
+
+		// Group findings by workload and sort worst-first
+		byWorkload := groupFindingsByWorkload(ns.Findings)
+		workloads := sortedWorkloadKeysByScore(byWorkload)
+		for _, wl := range workloads {
+			wf := byWorkload[wl]
+			wScore := workloadScore(wf)
+			wIcon := sanitizeScoreIcon(wScore)
+			fmt.Fprintf(&sb, "  %s %s  score %d/100  (%d finding(s))\n",
+				wIcon, stripNamespaceFromWorkload(wl), wScore, len(wf))
+			writeSanitizeFindingGroup(&sb, "CRITICAL", filterSanitizeFindings(wf, k8s.SanitizeCritical))
+			writeSanitizeFindingGroup(&sb, "MAJOR", filterSanitizeFindings(wf, k8s.SanitizeMajor))
+			writeSanitizeFindingGroup(&sb, "MINOR", filterSanitizeFindings(wf, k8s.SanitizeMinor))
+		}
+		sb.WriteString("\n")
+	}
+
+	if report.TotalFindings == 0 {
+		sb.WriteString("✅ No findings — all scanned workloads pass best-practice checks.\n")
+	}
+	return sb.String()
+}
+
+// sanitizeGradeIcon returns an emoji for a letter grade
+func sanitizeGradeIcon(grade string) string {
+	switch grade {
+	case "A":
+		return "🟢"
+	case "B":
+		return "🟡"
+	case "C":
+		return "🟠"
+	case "D":
+		return "🔴"
+	default:
+		return "💀"
+	}
+}
+
+// sanitizeScoreIcon returns an emoji based on a raw score.
+// ✅ is reserved for a perfect 100 (zero findings); anything less uses the grade icon.
+func sanitizeScoreIcon(score int) string {
+	if score == 100 {
+		return "✅"
+	}
+	return sanitizeGradeIcon(workloadGrade(score))
+}
+
+// filterSanitizeFindings returns findings matching the given severity
+func filterSanitizeFindings(findings []k8s.SanitizeFinding, sev k8s.SanitizeSeverity) []k8s.SanitizeFinding {
+	out := make([]k8s.SanitizeFinding, 0)
+	for _, f := range findings {
+		if f.Severity == sev {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// groupFindingsByWorkload groups findings by their Workload ID
+func groupFindingsByWorkload(findings []k8s.SanitizeFinding) map[string][]k8s.SanitizeFinding {
+	m := make(map[string][]k8s.SanitizeFinding)
+	for _, f := range findings {
+		m[f.Workload] = append(m[f.Workload], f)
+	}
+	return m
+}
+
+// sortedWorkloadKeysByScore returns workload IDs sorted by score ascending (worst first), then alphabetically
+func sortedWorkloadKeysByScore(m map[string][]k8s.SanitizeFinding) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		si := workloadScore(m[keys[i]])
+		sj := workloadScore(m[keys[j]])
+		if si != sj {
+			return si < sj
+		}
+		return keys[i] < keys[j]
+	})
+	return keys
+}
+
+// workloadScore computes a 0-100 score from a workload's findings
+func workloadScore(findings []k8s.SanitizeFinding) int {
+	penalty := 0
+	for _, f := range findings {
+		penalty += f.Penalty
+	}
+	if penalty > 100 {
+		return 0
+	}
+	return 100 - penalty
+}
+
+// workloadGrade returns a letter grade for a 0-100 score
+func workloadGrade(score int) string {
+	switch {
+	case score >= 90:
+		return "A"
+	case score >= 75:
+		return "B"
+	case score >= 60:
+		return "C"
+	case score >= 40:
+		return "D"
+	default:
+		return "F"
+	}
+}
+
+// stripNamespaceFromWorkload converts "namespace/Kind/name" to "Kind/name"
+func stripNamespaceFromWorkload(workload string) string {
+	if idx := strings.Index(workload, "/"); idx >= 0 {
+		return workload[idx+1:]
+	}
+	return workload
+}
+
+// writeSanitizeFindingGroup writes a labelled group of findings (workload already shown by caller)
+func writeSanitizeFindingGroup(sb *strings.Builder, label string, findings []k8s.SanitizeFinding) {
+	for _, f := range findings {
+		containerPart := ""
+		if f.Container != "" {
+			containerPart = fmt.Sprintf(" [%s]", f.Container)
+		}
+		fmt.Fprintf(sb, "    [%s] %s%s: %s\n", label, f.RuleID, containerPart, f.Message)
+	}
 }

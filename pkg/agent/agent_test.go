@@ -24,8 +24,8 @@ func TestDefineTools(t *testing.T) {
 
 	tools := defineTools(provider, state)
 
-	if len(tools) != 5 {
-		t.Errorf("defineTools() returned %d tools, want 5", len(tools))
+	if len(tools) != 6 {
+		t.Errorf("defineTools() returned %d tools, want 6", len(tools))
 	}
 
 	expectedNames := map[string]bool{
@@ -34,6 +34,7 @@ func TestDefineTools(t *testing.T) {
 		toolCompareClusters:  false,
 		toolCheckAllClusters: false,
 		toolKubectlExec:      false,
+		toolSanitizeCluster:  false,
 	}
 
 	for _, tool := range tools {
@@ -500,8 +501,8 @@ func TestDefineToolsWithState(t *testing.T) {
 
 	tools := defineTools(provider, state)
 
-	if len(tools) != 5 {
-		t.Errorf("defineTools() returned %d tools, want 5", len(tools))
+	if len(tools) != 6 {
+		t.Errorf("defineTools() returned %d tools, want 6", len(tools))
 	}
 
 	// Verify kubectl_exec tool exists
@@ -529,5 +530,77 @@ func TestIsJSONOutput(t *testing.T) {
 	}
 	if isJSONOutput(OutputText) {
 		t.Error("isJSONOutput(OutputText) = true, want false")
+	}
+}
+
+func TestParseSanitizerAgent(t *testing.T) {
+	agentType, err := ParseAgentType("sanitizer")
+	if err != nil {
+		t.Fatalf("ParseAgentType(sanitizer) returned unexpected error: %v", err)
+	}
+	if agentType != AgentSanitizer {
+		t.Errorf("ParseAgentType(sanitizer) = %q, want %q", agentType, AgentSanitizer)
+	}
+}
+
+func TestParseSanitizerAgentCaseInsensitive(t *testing.T) {
+	for _, input := range []string{"Sanitizer", "SANITIZER", "sanitizer"} {
+		agentType, err := ParseAgentType(input)
+		if err != nil {
+			t.Errorf("ParseAgentType(%q) returned unexpected error: %v", input, err)
+			continue
+		}
+		if agentType != AgentSanitizer {
+			t.Errorf("ParseAgentType(%q) = %q, want %q", input, agentType, AgentSanitizer)
+		}
+	}
+}
+
+func TestSanitizeClusterParams(t *testing.T) {
+	params := SanitizeClusterParams{
+		Context:       "my-cluster",
+		Namespace:     "production",
+		IncludeSystem: false,
+	}
+	if params.Context != "my-cluster" {
+		t.Errorf("Context = %q, want %q", params.Context, "my-cluster")
+	}
+	if params.Namespace != "production" {
+		t.Errorf("Namespace = %q, want %q", params.Namespace, "production")
+	}
+	if params.IncludeSystem {
+		t.Error("IncludeSystem should default to false")
+	}
+}
+
+func TestSanitizeClusterTool(t *testing.T) {
+	provider := createMockProvider(t)
+	state := &agentState{mode: ModeReadOnly, outputFormat: OutputText}
+	tool := defineSanitizeClusterTool(provider, state)
+
+	if tool.Name != toolSanitizeCluster {
+		t.Errorf(errToolNameFormat, tool.Name, toolSanitizeCluster)
+	}
+	if tool.Description == "" {
+		t.Error(errToolDescriptionEmpty)
+	}
+}
+
+func TestSanitizerAgentDefinition(t *testing.T) {
+	def, ok := agentDefinitions[AgentSanitizer]
+	if !ok {
+		t.Fatal("AgentSanitizer not found in agentDefinitions")
+	}
+	if def.Icon != "🧹" {
+		t.Errorf("Icon = %q, want 🧹", def.Icon)
+	}
+	if def.Prompt == "" {
+		t.Error("AgentSanitizer prompt is empty")
+	}
+	if !def.preferPremium {
+		t.Error("AgentSanitizer should set preferPremium = true")
+	}
+	if len(def.Examples) == 0 {
+		t.Error("AgentSanitizer should have at least one example")
 	}
 }
