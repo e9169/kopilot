@@ -190,6 +190,27 @@ func (p *Provider) GetAllClusterStatuses(ctx context.Context) []*ClusterStatus {
 	return statuses
 }
 
+// SanitizeCluster inspects all Deployments, StatefulSets, and DaemonSets in the cluster against
+// Kubernetes best-practice and security rules, returning a scored report grouped by namespace.
+// If targetNamespace is non-empty, only that namespace is scanned.
+// If includeSystem is false, system namespaces are excluded from the scan.
+func (p *Provider) SanitizeCluster(ctx context.Context, contextName, targetNamespace string, includeSystem bool) (*SanitizeResult, error) {
+	clientset, _, err := p.createClientset(contextName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client for context %q: %w", contextName, err)
+	}
+
+	queryCtx, cancel := context.WithTimeout(ctx, DefaultAPITimeout)
+	defer cancel()
+
+	findings, allWorkloads, err := collectSanitizeFindings(queryCtx, clientset, targetNamespace, includeSystem)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildSanitizeResult(contextName, findings, allWorkloads), nil
+}
+
 // GetCurrentContext returns the current context name
 func (p *Provider) GetCurrentContext() string {
 	return p.currentContext
