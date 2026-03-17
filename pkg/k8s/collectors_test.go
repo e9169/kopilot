@@ -333,12 +333,6 @@ func TestGradeFromScore(t *testing.T) {
 	}
 }
 
-// newInt32 is a helper to create *int32 pointers for test data
-func newInt32(v int32) *int32 { return &v }
-
-// newBool is a helper to create *bool pointers for test data
-func newBool(v bool) *bool { return &v }
-
 // makeCompliantDeployment builds a Deployment that passes all sanitize rules
 func makeCompliantDeployment(ns, name string, replicas int32) *appsv1.Deployment {
 	trueVal := true

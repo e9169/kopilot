@@ -1526,7 +1526,11 @@ func interactiveLoopWithModelSelection(deps *loopDeps, initialSession *copilot.S
 	if err != nil {
 		return fmt.Errorf("failed to initialise readline: %w", err)
 	}
-	defer rl.Close()
+	defer func() {
+		if closeErr := rl.Close(); closeErr != nil {
+			log.Printf("Warning: failed to close readline: %v", closeErr)
+		}
+	}()
 
 	ts := &turnState{session: initialSession, model: modelCostEffective}
 	for {

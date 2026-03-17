@@ -659,14 +659,18 @@ func printExecutionHeader(state *agentState, isReadOnly bool, fullCommand string
 }
 
 func runKubectlCommand(cmdArgs []string) ([]byte, error) {
+	kubectlPath, err := exec.LookPath("kubectl")
+	if err != nil {
+		return nil, fmt.Errorf("kubectl not found in PATH: %w", err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "kubectl", cmdArgs...)
-	out, err := cmd.CombinedOutput()
+	cmd := exec.CommandContext(ctx, kubectlPath, cmdArgs...)
+	out, execErr := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		return out, fmt.Errorf("kubectl command timed out after 30s")
 	}
-	return out, err
+	return out, execErr
 }
 
 func buildKubectlJSONResult(clusterName, contextName, fullCommand string, output []byte, execErr error) (any, error) {

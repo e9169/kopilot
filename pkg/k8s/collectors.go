@@ -175,8 +175,8 @@ const (
 	sanitizePenaltyMinor    = 2
 )
 
-// checkContainerRules evaluates per-container linting rules and appends findings
-func checkContainerRules(c corev1.Container, workload string, findings *[]SanitizeFinding) {
+// checkContainerSecurityContext evaluates CKS security-context rules (CKS-001, CKS-002, CKS-003).
+func checkContainerSecurityContext(c corev1.Container, workload string, findings *[]SanitizeFinding) {
 	// CKS-001: Privileged container
 	if c.SecurityContext != nil &&
 		c.SecurityContext.Privileged != nil &&
@@ -226,6 +226,51 @@ func checkContainerRules(c corev1.Container, workload string, findings *[]Saniti
 			Penalty:   sanitizePenaltyCritical,
 		})
 	}
+}
+
+// checkContainerFilesystemAndCaps evaluates filesystem and capability rules (BP-007, BP-008).
+func checkContainerFilesystemAndCaps(c corev1.Container, workload string, findings *[]SanitizeFinding) {
+	// BP-007: readOnlyRootFilesystem not true
+	readOnly := c.SecurityContext != nil &&
+		c.SecurityContext.ReadOnlyRootFilesystem != nil &&
+		*c.SecurityContext.ReadOnlyRootFilesystem
+	if !readOnly {
+		*findings = append(*findings, SanitizeFinding{
+			RuleID:    "BP-007",
+			Severity:  SanitizeMinor,
+			Workload:  workload,
+			Container: c.Name,
+			Message:   "readOnlyRootFilesystem is not set to true",
+			Penalty:   sanitizePenaltyMinor,
+		})
+	}
+
+	// BP-008: Capabilities not fully dropped
+	allDropped := false
+	if c.SecurityContext != nil && c.SecurityContext.Capabilities != nil {
+		for _, cap := range c.SecurityContext.Capabilities.Drop {
+			if string(cap) == "ALL" {
+				allDropped = true
+				break
+			}
+		}
+	}
+	if !allDropped {
+		*findings = append(*findings, SanitizeFinding{
+			RuleID:    "BP-008",
+			Severity:  SanitizeMinor,
+			Workload:  workload,
+			Container: c.Name,
+			Message:   "capabilities.drop does not include ALL",
+			Penalty:   sanitizePenaltyMinor,
+		})
+	}
+}
+
+// checkContainerRules evaluates per-container linting rules and appends findings.
+func checkContainerRules(c corev1.Container, workload string, findings *[]SanitizeFinding) {
+	checkContainerSecurityContext(c, workload, findings)
+	checkContainerFilesystemAndCaps(c, workload, findings)
 
 	// BP-001: Missing livenessProbe
 	if c.LivenessProbe == nil {
@@ -286,42 +331,6 @@ func checkContainerRules(c corev1.Container, workload string, findings *[]Saniti
 			Container: c.Name,
 			Message:   fmt.Sprintf("image %q uses :latest or has no explicit tag", img),
 			Penalty:   sanitizePenaltyMajor,
-		})
-	}
-
-	// BP-007: readOnlyRootFilesystem not true
-	readOnly := c.SecurityContext != nil &&
-		c.SecurityContext.ReadOnlyRootFilesystem != nil &&
-		*c.SecurityContext.ReadOnlyRootFilesystem
-	if !readOnly {
-		*findings = append(*findings, SanitizeFinding{
-			RuleID:    "BP-007",
-			Severity:  SanitizeMinor,
-			Workload:  workload,
-			Container: c.Name,
-			Message:   "readOnlyRootFilesystem is not set to true",
-			Penalty:   sanitizePenaltyMinor,
-		})
-	}
-
-	// BP-008: Capabilities not fully dropped
-	allDropped := false
-	if c.SecurityContext != nil && c.SecurityContext.Capabilities != nil {
-		for _, cap := range c.SecurityContext.Capabilities.Drop {
-			if string(cap) == "ALL" {
-				allDropped = true
-				break
-			}
-		}
-	}
-	if !allDropped {
-		*findings = append(*findings, SanitizeFinding{
-			RuleID:    "BP-008",
-			Severity:  SanitizeMinor,
-			Workload:  workload,
-			Container: c.Name,
-			Message:   "capabilities.drop does not include ALL",
-			Penalty:   sanitizePenaltyMinor,
 		})
 	}
 }
@@ -475,6 +484,129 @@ func gradeFromScore(score int) string {
 	}
 }
 
+// shouldScanNamespace reports whether a namespace should be included in the sanitize scan.
+func shouldScanNamespace(ns, targetNamespace string, includeSystem bool) bool {
+	if targetNamespace != "" {
+		return ns == targetNamespace
+	}
+	return includeSystem || !systemNamespaces[ns]
+}
+
+// scanPodWorkloadItem runs all pod-level rules against a single workload and appends results.
+func scanPodWorkloadItem(ns, kind, name string, spec corev1.PodSpec, labels, annotations map[string]string, replicas int32, targetNamespace string, includeSystem bool, allFindings *[]SanitizeFinding, allWorkloads *[]string) {
+	if !shouldScanNamespace(ns, targetNamespace, includeSystem) {
+		return
+	}
+	workload := fmt.Sprintf("%s/%s/%s", ns, kind, name)
+	*allWorkloads = append(*allWorkloads, workload)
+	var findings []SanitizeFinding
+
+	checkPodSpecRules(spec, workload, &findings)
+	checkWorkloadMetadata(labels, annotations, workload, &findings)
+	for _, c := range spec.Containers {
+		checkContainerRules(c, workload, &findings)
+	}
+
+	// BP-006: single replica is a reliability risk for Deployments and StatefulSets
+	if (kind == "Deployment" || kind == "StatefulSet") && replicas <= 1 {
+		findings = append(findings, SanitizeFinding{
+			RuleID:   "BP-006",
+			Severity: SanitizeMajor,
+			Workload: workload,
+			Message:  fmt.Sprintf("%d replica(s) configured — single point of failure", replicas),
+			Penalty:  sanitizePenaltyMajor,
+		})
+	}
+
+	*allFindings = append(*allFindings, findings...)
+}
+
+// collectPodWorkloads scans Deployments, StatefulSets, DaemonSets, and CronJobs.
+func collectPodWorkloads(ctx context.Context, clientset kubernetes.Interface, targetNamespace string, includeSystem bool, allFindings *[]SanitizeFinding, allWorkloads *[]string) error {
+	deploys, err := clientset.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to list deployments: %w", err)
+	}
+	for _, d := range deploys.Items {
+		replicas := int32(1)
+		if d.Spec.Replicas != nil {
+			replicas = *d.Spec.Replicas
+		}
+		scanPodWorkloadItem(d.Namespace, "Deployment", d.Name, d.Spec.Template.Spec, d.Labels, d.Annotations, replicas, targetNamespace, includeSystem, allFindings, allWorkloads)
+	}
+
+	stss, err := clientset.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to list statefulsets: %w", err)
+	}
+	for _, ss := range stss.Items {
+		replicas := int32(1)
+		if ss.Spec.Replicas != nil {
+			replicas = *ss.Spec.Replicas
+		}
+		scanPodWorkloadItem(ss.Namespace, "StatefulSet", ss.Name, ss.Spec.Template.Spec, ss.Labels, ss.Annotations, replicas, targetNamespace, includeSystem, allFindings, allWorkloads)
+	}
+
+	// DaemonSets have no replica count; pass 2 to skip BP-006
+	dss, err := clientset.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to list daemonsets: %w", err)
+	}
+	for _, ds := range dss.Items {
+		scanPodWorkloadItem(ds.Namespace, "DaemonSet", ds.Name, ds.Spec.Template.Spec, ds.Labels, ds.Annotations, 2, targetNamespace, includeSystem, allFindings, allWorkloads)
+	}
+
+	// CronJobs: pod-spec rules apply; BP-006 skipped via replicas=2
+	cjs, err := clientset.BatchV1().CronJobs("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to list cronjobs: %w", err)
+	}
+	for _, cj := range cjs.Items {
+		scanPodWorkloadItem(cj.Namespace, "CronJob", cj.Name, cj.Spec.JobTemplate.Spec.Template.Spec, cj.Labels, cj.Annotations, 2, targetNamespace, includeSystem, allFindings, allWorkloads)
+	}
+
+	return nil
+}
+
+// collectNetworkResources scans Services and Ingresses.
+func collectNetworkResources(ctx context.Context, clientset kubernetes.Interface, targetNamespace string, includeSystem bool, allFindings *[]SanitizeFinding, allWorkloads *[]string) error {
+	svcs, err := clientset.CoreV1().Services("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to list services: %w", err)
+	}
+	for _, svc := range svcs.Items {
+		if !shouldScanNamespace(svc.Namespace, targetNamespace, includeSystem) {
+			continue
+		}
+		// Skip the built-in kubernetes Service
+		if svc.Namespace == "default" && svc.Name == "kubernetes" {
+			continue
+		}
+		workload := fmt.Sprintf("%s/Service/%s", svc.Namespace, svc.Name)
+		*allWorkloads = append(*allWorkloads, workload)
+		var findings []SanitizeFinding
+		checkServiceRules(svc.Spec, workload, &findings)
+		*allFindings = append(*allFindings, findings...)
+	}
+
+	ings, err := clientset.NetworkingV1().Ingresses("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to list ingresses: %w", err)
+	}
+	for _, ing := range ings.Items {
+		if !shouldScanNamespace(ing.Namespace, targetNamespace, includeSystem) {
+			continue
+		}
+		workload := fmt.Sprintf("%s/Ingress/%s", ing.Namespace, ing.Name)
+		*allWorkloads = append(*allWorkloads, workload)
+		var findings []SanitizeFinding
+		checkIngressRules(ing.Spec, workload, &findings)
+		*allFindings = append(*allFindings, findings...)
+	}
+
+	return nil
+}
+
 // collectSanitizeFindings inspects Deployments, StatefulSets, DaemonSets, CronJobs, Services, and
 // Ingresses in a cluster against best-practice and security rules. If targetNamespace is non-empty,
 // only that namespace is scanned. If includeSystem is false, system namespaces are excluded.
@@ -483,121 +615,11 @@ func collectSanitizeFindings(ctx context.Context, clientset kubernetes.Interface
 	allFindings := make([]SanitizeFinding, 0)
 	allWorkloads := make([]string, 0)
 
-	shouldScan := func(ns string) bool {
-		if targetNamespace != "" {
-			return ns == targetNamespace
-		}
-		return includeSystem || !systemNamespaces[ns]
+	if err := collectPodWorkloads(ctx, clientset, targetNamespace, includeSystem, &allFindings, &allWorkloads); err != nil {
+		return nil, nil, err
 	}
-
-	scanPodWorkload := func(ns, kind, name string, spec corev1.PodSpec, labels, annotations map[string]string, replicas int32) {
-		if !shouldScan(ns) {
-			return
-		}
-		workload := fmt.Sprintf("%s/%s/%s", ns, kind, name)
-		allWorkloads = append(allWorkloads, workload)
-		var findings []SanitizeFinding
-
-		checkPodSpecRules(spec, workload, &findings)
-		checkWorkloadMetadata(labels, annotations, workload, &findings)
-		for _, c := range spec.Containers {
-			checkContainerRules(c, workload, &findings)
-		}
-
-		// BP-006: single replica is a reliability risk for Deployments and StatefulSets
-		if (kind == "Deployment" || kind == "StatefulSet") && replicas <= 1 {
-			findings = append(findings, SanitizeFinding{
-				RuleID:   "BP-006",
-				Severity: SanitizeMajor,
-				Workload: workload,
-				Message:  fmt.Sprintf("%d replica(s) configured — single point of failure", replicas),
-				Penalty:  sanitizePenaltyMajor,
-			})
-		}
-
-		allFindings = append(allFindings, findings...)
-	}
-
-	// Deployments
-	deploys, err := clientset.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list deployments: %w", err)
-	}
-	for _, d := range deploys.Items {
-		replicas := int32(1)
-		if d.Spec.Replicas != nil {
-			replicas = *d.Spec.Replicas
-		}
-		scanPodWorkload(d.Namespace, "Deployment", d.Name, d.Spec.Template.Spec, d.Labels, d.Annotations, replicas)
-	}
-
-	// StatefulSets
-	stss, err := clientset.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list statefulsets: %w", err)
-	}
-	for _, ss := range stss.Items {
-		replicas := int32(1)
-		if ss.Spec.Replicas != nil {
-			replicas = *ss.Spec.Replicas
-		}
-		scanPodWorkload(ss.Namespace, "StatefulSet", ss.Name, ss.Spec.Template.Spec, ss.Labels, ss.Annotations, replicas)
-	}
-
-	// DaemonSets (no replica count; pass 2 to skip BP-006)
-	dss, err := clientset.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list daemonsets: %w", err)
-	}
-	for _, ds := range dss.Items {
-		scanPodWorkload(ds.Namespace, "DaemonSet", ds.Name, ds.Spec.Template.Spec, ds.Labels, ds.Annotations, 2)
-	}
-
-	// CronJobs (pod-spec rules apply; BP-006 skipped via replicas=2)
-	cjs, err := clientset.BatchV1().CronJobs("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list cronjobs: %w", err)
-	}
-	for _, cj := range cjs.Items {
-		scanPodWorkload(cj.Namespace, "CronJob", cj.Name,
-			cj.Spec.JobTemplate.Spec.Template.Spec,
-			cj.Labels, cj.Annotations, 2)
-	}
-
-	// Services
-	svcs, err := clientset.CoreV1().Services("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list services: %w", err)
-	}
-	for _, svc := range svcs.Items {
-		if !shouldScan(svc.Namespace) {
-			continue
-		}
-		// Skip the built-in kubernetes Service
-		if svc.Namespace == "default" && svc.Name == "kubernetes" {
-			continue
-		}
-		workload := fmt.Sprintf("%s/Service/%s", svc.Namespace, svc.Name)
-		allWorkloads = append(allWorkloads, workload)
-		var findings []SanitizeFinding
-		checkServiceRules(svc.Spec, workload, &findings)
-		allFindings = append(allFindings, findings...)
-	}
-
-	// Ingresses
-	ings, err := clientset.NetworkingV1().Ingresses("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list ingresses: %w", err)
-	}
-	for _, ing := range ings.Items {
-		if !shouldScan(ing.Namespace) {
-			continue
-		}
-		workload := fmt.Sprintf("%s/Ingress/%s", ing.Namespace, ing.Name)
-		allWorkloads = append(allWorkloads, workload)
-		var findings []SanitizeFinding
-		checkIngressRules(ing.Spec, workload, &findings)
-		allFindings = append(allFindings, findings...)
+	if err := collectNetworkResources(ctx, clientset, targetNamespace, includeSystem, &allFindings, &allWorkloads); err != nil {
+		return nil, nil, err
 	}
 
 	return allFindings, allWorkloads, nil
