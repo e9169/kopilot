@@ -1380,46 +1380,54 @@ func dispatchMCPCommand(deps *loopDeps, input string, ts *turnState) (bool, erro
 	subCmd := strings.ToLower(parts[1])
 	switch subCmd {
 	case "add":
-		if len(parts) < 4 {
-			fmt.Printf("  %s●%s Usage: /mcp add <name> <url>\n", colorRed, colorReset)
-			return true, nil
-		}
-		name, url := parts[2], parts[3]
-		if err := addMCPServer(deps.state.mcpConfigPath, MCPServerConfig{Name: name, Type: "http", URL: url}); err != nil {
-			fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
-			return true, nil
-		}
-		fmt.Printf("  %s●%s Added MCP server %s%s%s — reloading session...\n", colorGreen, colorReset, colorCyan, name, colorReset)
-		newSession, err := switchToModel(deps, ts.session, ts.model)
-		if err != nil {
-			return true, err
-		}
-		ts.session = newSession
-		return true, nil
-
+		return true, mcpHandleAdd(deps, parts, ts)
 	case "delete", "remove":
-		if len(parts) < 3 {
-			fmt.Printf("  %s●%s Usage: /mcp delete <name>\n", colorRed, colorReset)
-			return true, nil
-		}
-		name := parts[2]
-		if err := deleteMCPServer(deps.state.mcpConfigPath, name); err != nil {
-			fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
-			return true, nil
-		}
-		fmt.Printf("  %s●%s Removed MCP server %s%s%s — reloading session...\n", colorGreen, colorReset, colorCyan, name, colorReset)
-		newSession, err := switchToModel(deps, ts.session, ts.model)
-		if err != nil {
-			return true, err
-		}
-		ts.session = newSession
-		return true, nil
-
+		return true, mcpHandleDeleteRemove(deps, parts, ts)
 	default:
 		fmt.Printf("  %s●%s Unknown /mcp sub-command %s%q%s — use: list, add, delete\n",
 			colorRed, colorReset, colorBold, subCmd, colorReset)
 		return true, nil
 	}
+}
+
+// mcpHandleAdd processes the "/mcp add <name> <url>" sub-command.
+func mcpHandleAdd(deps *loopDeps, parts []string, ts *turnState) error {
+	if len(parts) < 4 {
+		fmt.Printf("  %s●%s Usage: /mcp add <name> <url>\n", colorRed, colorReset)
+		return nil
+	}
+	name, url := parts[2], parts[3]
+	if err := addMCPServer(deps.state.mcpConfigPath, MCPServerConfig{Name: name, Type: mcpHTTPType, URL: url}); err != nil {
+		fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
+		return nil
+	}
+	fmt.Printf("  %s●%s Added MCP server %s%s%s — reloading session...\n", colorGreen, colorReset, colorCyan, name, colorReset)
+	newSession, err := switchToModel(deps, ts.session, ts.model)
+	if err != nil {
+		return err
+	}
+	ts.session = newSession
+	return nil
+}
+
+// mcpHandleDeleteRemove processes the "/mcp delete <name>" sub-command.
+func mcpHandleDeleteRemove(deps *loopDeps, parts []string, ts *turnState) error {
+	if len(parts) < 3 {
+		fmt.Printf("  %s●%s Usage: /mcp delete <name>\n", colorRed, colorReset)
+		return nil
+	}
+	name := parts[2]
+	if err := deleteMCPServer(deps.state.mcpConfigPath, name); err != nil {
+		fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
+		return nil
+	}
+	fmt.Printf("  %s●%s Removed MCP server %s%s%s — reloading session...\n", colorGreen, colorReset, colorCyan, name, colorReset)
+	newSession, err := switchToModel(deps, ts.session, ts.model)
+	if err != nil {
+		return err
+	}
+	ts.session = newSession
+	return nil
 }
 
 // printMCPList prints all configured MCP servers to stdout.

@@ -492,23 +492,37 @@ func shouldScanNamespace(ns, targetNamespace string, includeSystem bool) bool {
 	return includeSystem || !systemNamespaces[ns]
 }
 
+// podWorkloadRef identifies a single Kubernetes workload to be scanned.
+type podWorkloadRef struct {
+	namespace, kind, name string
+	labels, annotations   map[string]string
+}
+
+// podScanAccumulator carries the shared filter config and output slices for a scan.
+type podScanAccumulator struct {
+	targetNamespace string
+	includeSystem   bool
+	findings        *[]SanitizeFinding
+	workloads       *[]string
+}
+
 // scanPodWorkloadItem runs all pod-level rules against a single workload and appends results.
-func scanPodWorkloadItem(ns, kind, name string, spec corev1.PodSpec, labels, annotations map[string]string, replicas int32, targetNamespace string, includeSystem bool, allFindings *[]SanitizeFinding, allWorkloads *[]string) {
-	if !shouldScanNamespace(ns, targetNamespace, includeSystem) {
+func scanPodWorkloadItem(ref podWorkloadRef, spec corev1.PodSpec, replicas int32, acc podScanAccumulator) {
+	if !shouldScanNamespace(ref.namespace, acc.targetNamespace, acc.includeSystem) {
 		return
 	}
-	workload := fmt.Sprintf("%s/%s/%s", ns, kind, name)
-	*allWorkloads = append(*allWorkloads, workload)
+	workload := fmt.Sprintf("%s/%s/%s", ref.namespace, ref.kind, ref.name)
+	*acc.workloads = append(*acc.workloads, workload)
 	var findings []SanitizeFinding
 
 	checkPodSpecRules(spec, workload, &findings)
-	checkWorkloadMetadata(labels, annotations, workload, &findings)
+	checkWorkloadMetadata(ref.labels, ref.annotations, workload, &findings)
 	for _, c := range spec.Containers {
 		checkContainerRules(c, workload, &findings)
 	}
 
 	// BP-006: single replica is a reliability risk for Deployments and StatefulSets
-	if (kind == "Deployment" || kind == "StatefulSet") && replicas <= 1 {
+	if (ref.kind == "Deployment" || ref.kind == "StatefulSet") && replicas <= 1 {
 		findings = append(findings, SanitizeFinding{
 			RuleID:   "BP-006",
 			Severity: SanitizeMajor,
@@ -518,11 +532,18 @@ func scanPodWorkloadItem(ns, kind, name string, spec corev1.PodSpec, labels, ann
 		})
 	}
 
-	*allFindings = append(*allFindings, findings...)
+	*acc.findings = append(*acc.findings, findings...)
 }
 
 // collectPodWorkloads scans Deployments, StatefulSets, DaemonSets, and CronJobs.
 func collectPodWorkloads(ctx context.Context, clientset kubernetes.Interface, targetNamespace string, includeSystem bool, allFindings *[]SanitizeFinding, allWorkloads *[]string) error {
+	acc := podScanAccumulator{
+		targetNamespace: targetNamespace,
+		includeSystem:   includeSystem,
+		findings:        allFindings,
+		workloads:       allWorkloads,
+	}
+
 	deploys, err := clientset.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to list deployments: %w", err)
@@ -532,7 +553,7 @@ func collectPodWorkloads(ctx context.Context, clientset kubernetes.Interface, ta
 		if d.Spec.Replicas != nil {
 			replicas = *d.Spec.Replicas
 		}
-		scanPodWorkloadItem(d.Namespace, "Deployment", d.Name, d.Spec.Template.Spec, d.Labels, d.Annotations, replicas, targetNamespace, includeSystem, allFindings, allWorkloads)
+		scanPodWorkloadItem(podWorkloadRef{d.Namespace, "Deployment", d.Name, d.Labels, d.Annotations}, d.Spec.Template.Spec, replicas, acc)
 	}
 
 	stss, err := clientset.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
@@ -544,7 +565,7 @@ func collectPodWorkloads(ctx context.Context, clientset kubernetes.Interface, ta
 		if ss.Spec.Replicas != nil {
 			replicas = *ss.Spec.Replicas
 		}
-		scanPodWorkloadItem(ss.Namespace, "StatefulSet", ss.Name, ss.Spec.Template.Spec, ss.Labels, ss.Annotations, replicas, targetNamespace, includeSystem, allFindings, allWorkloads)
+		scanPodWorkloadItem(podWorkloadRef{ss.Namespace, "StatefulSet", ss.Name, ss.Labels, ss.Annotations}, ss.Spec.Template.Spec, replicas, acc)
 	}
 
 	// DaemonSets have no replica count; pass 2 to skip BP-006
@@ -553,7 +574,7 @@ func collectPodWorkloads(ctx context.Context, clientset kubernetes.Interface, ta
 		return fmt.Errorf("failed to list daemonsets: %w", err)
 	}
 	for _, ds := range dss.Items {
-		scanPodWorkloadItem(ds.Namespace, "DaemonSet", ds.Name, ds.Spec.Template.Spec, ds.Labels, ds.Annotations, 2, targetNamespace, includeSystem, allFindings, allWorkloads)
+		scanPodWorkloadItem(podWorkloadRef{ds.Namespace, "DaemonSet", ds.Name, ds.Labels, ds.Annotations}, ds.Spec.Template.Spec, 2, acc)
 	}
 
 	// CronJobs: pod-spec rules apply; BP-006 skipped via replicas=2
@@ -562,7 +583,7 @@ func collectPodWorkloads(ctx context.Context, clientset kubernetes.Interface, ta
 		return fmt.Errorf("failed to list cronjobs: %w", err)
 	}
 	for _, cj := range cjs.Items {
-		scanPodWorkloadItem(cj.Namespace, "CronJob", cj.Name, cj.Spec.JobTemplate.Spec.Template.Spec, cj.Labels, cj.Annotations, 2, targetNamespace, includeSystem, allFindings, allWorkloads)
+		scanPodWorkloadItem(podWorkloadRef{cj.Namespace, "CronJob", cj.Name, cj.Labels, cj.Annotations}, cj.Spec.JobTemplate.Spec.Template.Spec, 2, acc)
 	}
 
 	return nil
