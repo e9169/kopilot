@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/e9169/kopilot/pkg/k8s"
 	copilot "github.com/github/copilot-sdk/go"
@@ -24,6 +25,9 @@ func defineTools(k8sProvider *k8s.Provider, state *agentState) []copilot.Tool {
 		defineCheckAllClustersTool(k8sProvider, state),
 		defineKubectlExecTool(k8sProvider, state),
 		defineSanitizeClusterTool(k8sProvider, state),
+		defineMCPListServersTool(state),
+		defineMCPAddServerTool(state),
+		defineMCPDeleteServerTool(state),
 	}
 	// Ensure all tool schemas are valid for all models/APIs.
 	// Most LLM APIs (OpenAI, Anthropic, Google, etc.) require object schemas
@@ -512,7 +516,7 @@ func handleKubectlExec(k8sProvider *k8s.Provider, state *agentState, params Kube
 	fullCommand, cmdArgs := buildKubectlCommand(params.Context, params.Args)
 	isReadOnly := isReadOnlyCommand(params.Args)
 
-	proceed, cancelResult, err := enforceExecutionMode(state, isReadOnly, clusterName, params.Context, fullCommand, params.Args[0])
+	proceed, cancelResult, err := enforceExecutionMode(state, isReadOnly, clusterName, params.Context, fullCommand)
 	if err != nil {
 		return nil, err
 	}
@@ -554,13 +558,22 @@ func buildKubectlCommand(contextName string, args []string) (string, []string) {
 	return fullCommand, cmdArgs
 }
 
-func enforceExecutionMode(state *agentState, isReadOnly bool, clusterName, contextName, fullCommand, operation string) (bool, any, error) {
+func enforceExecutionMode(state *agentState, isReadOnly bool, clusterName, contextName, fullCommand string) (bool, any, error) {
 	if !isReadOnly && state.mode == ModeReadOnly {
-		if !isJSONOutput(state.outputFormat) {
-			fmt.Printf("\n%s🔒 Blocked:%s %s%s%s\n", colorRed, colorReset, colorBold, fullCommand, colorReset)
+		if isJSONOutput(state.outputFormat) {
+			return false, fmt.Sprintf("write operation blocked in read-only mode. Cluster: %s (%s), Command: %s",
+				clusterName, contextName, fullCommand), nil
 		}
-		return false, nil, fmt.Errorf("write operation blocked in read-only mode.\n\nCluster: %s (%s)\nCommand: %s\nOperation: %s\n\nThis command would modify cluster state. Use /interactive to enable write operations with confirmation",
-			clusterName, contextName, fullCommand, operation)
+		// Offer the user a chance to switch to interactive mode rather than
+		// surfacing the block as an error (which causes the model to retry or hallucinate).
+		switched, err := offerModeSwitch(state, fullCommand)
+		if err != nil {
+			return false, nil, err
+		}
+		if !switched {
+			return false, "Operation cancelled by user.", nil
+		}
+		// Fall through: mode is now ModeInteractive, so the block below will run.
 	}
 
 	if !isReadOnly && state.mode == ModeInteractive {
@@ -569,14 +582,45 @@ func enforceExecutionMode(state *agentState, isReadOnly bool, clusterName, conte
 			return false, nil, err
 		}
 		if !proceed {
-			return false, "Operation cancelled by user", nil
+			return false, "Operation cancelled by user.", nil
 		}
 	}
 
 	return true, nil, nil
 }
 
+// offerModeSwitch prompts the user to switch from read-only to interactive mode
+// when a write operation is attempted. If the user agrees, state.mode is updated
+// and true is returned so the caller can proceed with the normal confirmation flow.
+func offerModeSwitch(state *agentState, fullCommand string) (bool, error) {
+	resumeSpinner := pauseSpinner()
+	defer resumeSpinner()
+
+	fmt.Printf("\n%s🔒 Blocked:%s %s%s%s\n", colorRed, colorReset, colorBold, fullCommand, colorReset)
+	fmt.Printf("%sThis write operation requires interactive mode.%s\n", colorYellow, colorReset)
+	fmt.Print("Switch to interactive mode to proceed? (yes/no): ")
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false, fmt.Errorf("failed to read confirmation: %w", err)
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response != "yes" && response != "y" {
+		fmt.Printf("\n%s❌ Operation cancelled by user%s\n\n", colorRed, colorReset)
+		return false, nil
+	}
+
+	state.mode = ModeInteractive
+	fmt.Printf("  %s●%s Switched to %s🔓 interactive%s mode\n\n", colorGreen, colorReset, colorGreen, colorReset)
+	return true, nil
+}
+
 func confirmWriteOperation(state *agentState, fullCommand string) (bool, error) {
+	resumeSpinner := pauseSpinner()
+	defer resumeSpinner()
+
 	if !isJSONOutput(state.outputFormat) {
 		fmt.Printf("\n%s⚠️  Write Operation:%s %s%s%s\n", colorYellow, colorReset, colorBold, fullCommand, colorReset)
 		fmt.Printf("%sThis will modify the cluster state.%s\n", colorYellow, colorReset)
@@ -608,15 +652,21 @@ func printExecutionHeader(state *agentState, isReadOnly bool, fullCommand string
 		return
 	}
 	if isReadOnly {
-		fmt.Printf("%s🔍 Executing:%s %s%s%s\n", colorCyan, colorReset, colorBold, fullCommand, colorReset)
+		fmt.Printf("\r\033[K%s🔍 Executing:%s %s%s%s\n", colorCyan, colorReset, colorBold, fullCommand, colorReset)
 	} else {
-		fmt.Printf("%s⚡ Executing:%s %s%s%s\n", colorYellow, colorReset, colorBold, fullCommand, colorReset)
+		fmt.Printf("\r\033[K%s⚡ Executing:%s %s%s%s\n", colorYellow, colorReset, colorBold, fullCommand, colorReset)
 	}
 }
 
 func runKubectlCommand(cmdArgs []string) ([]byte, error) {
-	cmd := exec.Command("kubectl", cmdArgs...)
-	return cmd.CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "kubectl", cmdArgs...)
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return out, fmt.Errorf("kubectl command timed out after 30s")
+	}
+	return out, err
 }
 
 func buildKubectlJSONResult(clusterName, contextName, fullCommand string, output []byte, execErr error) (any, error) {
@@ -670,7 +720,7 @@ type SanitizeClusterParams struct {
 func defineSanitizeClusterTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
 	return copilot.DefineTool(
 		toolSanitizeCluster,
-		"Lint all Deployments, StatefulSets, DaemonSets, and Services in a cluster against Kubernetes best practices for reliability and operational hygiene. Returns a 0-100 score with an A-F grade, per-namespace breakdowns, and detailed findings per workload. CKS-* findings (security hardening gaps) are included in the compliance score; use the Security agent for a dedicated security audit.",
+		"Lint all Deployments, StatefulSets, and DaemonSets in a cluster against Kubernetes best practices and security rules (CIS Benchmark, NSA/CISA guidelines). Returns a 0-100 score with an A-F grade, per-namespace breakdowns, and detailed findings per workload.",
 		func(params SanitizeClusterParams, inv copilot.ToolInvocation) (any, error) {
 			ctx := context.Background()
 			report, err := k8sProvider.SanitizeCluster(ctx, params.Context, params.Namespace, params.IncludeSystem)
@@ -832,4 +882,81 @@ func writeSanitizeFindingGroup(sb *strings.Builder, label string, findings []k8s
 		}
 		fmt.Fprintf(sb, "    [%s] %s%s: %s\n", label, f.RuleID, containerPart, f.Message)
 	}
+}
+
+// ── MCP server management tools ─────────────────────────────────────────────
+
+// MCPListServersParams defines no parameters for mcp_list_servers
+type MCPListServersParams struct{}
+
+// MCPListServersResult defines the output for mcp_list_servers
+type MCPListServersResult struct {
+	Servers []MCPServerConfig `json:"servers"`
+}
+
+func defineMCPListServersTool(state *agentState) copilot.Tool {
+	return copilot.DefineTool(
+		toolMCPListServers,
+		"List all currently configured MCP (Model Context Protocol) servers",
+		func(_ MCPListServersParams, _ copilot.ToolInvocation) (any, error) {
+			servers, err := listMCPServers(state.mcpConfigPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to list MCP servers: %w", err)
+			}
+			if isJSONOutput(state.outputFormat) {
+				return MCPListServersResult{Servers: servers}, nil
+			}
+			if len(servers) == 0 {
+				return "No MCP servers configured. Use /mcp add <name> <url> or ask me to add one.", nil
+			}
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "Configured MCP servers (%d):\n\n", len(servers))
+			for i, s := range servers {
+				fmt.Fprintf(&sb, "  [%d] %s\n", i+1, s.Name)
+				fmt.Fprintf(&sb, "      Type: %s\n", s.Type)
+				fmt.Fprintf(&sb, "      URL:  %s\n", s.URL)
+			}
+			return sb.String(), nil
+		},
+	)
+}
+
+// MCPAddServerParams defines parameters for mcp_add_server
+type MCPAddServerParams struct {
+	Name string `json:"name" jsonschema:"Unique identifier for the MCP server (alphanumeric, hyphens, underscores)"`
+	URL  string `json:"url"  jsonschema:"HTTP(S) endpoint URL of the MCP server"`
+}
+
+func defineMCPAddServerTool(state *agentState) copilot.Tool {
+	return copilot.DefineTool(
+		toolMCPAddServer,
+		"Add or update an MCP (Model Context Protocol) server. The new server is persisted to the config file and will be active from the next session.",
+		func(params MCPAddServerParams, _ copilot.ToolInvocation) (any, error) {
+			entry := MCPServerConfig{Name: params.Name, Type: "http", URL: params.URL}
+			if err := addMCPServer(state.mcpConfigPath, entry); err != nil {
+				return nil, fmt.Errorf("failed to add MCP server: %w", err)
+			}
+			state.needsMCPReload = true
+			return fmt.Sprintf("MCP server %q added (%s). The session will reload to connect to it.", params.Name, params.URL), nil
+		},
+	)
+}
+
+// MCPDeleteServerParams defines parameters for mcp_delete_server
+type MCPDeleteServerParams struct {
+	Name string `json:"name" jsonschema:"Name of the MCP server to remove"`
+}
+
+func defineMCPDeleteServerTool(state *agentState) copilot.Tool {
+	return copilot.DefineTool(
+		toolMCPDeleteServer,
+		"Remove a configured MCP (Model Context Protocol) server by name",
+		func(params MCPDeleteServerParams, _ copilot.ToolInvocation) (any, error) {
+			if err := deleteMCPServer(state.mcpConfigPath, params.Name); err != nil {
+				return nil, fmt.Errorf("failed to delete MCP server: %w", err)
+			}
+			state.needsMCPReload = true
+			return fmt.Sprintf("MCP server %q removed. The session will reload.", params.Name), nil
+		},
+	)
 }

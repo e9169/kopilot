@@ -3,6 +3,7 @@ module github.com/e9169/kopilot
 go 1.26.0
 
 require (
+	github.com/chzyer/readline v1.5.1
 	github.com/github/copilot-sdk/go v0.1.30
 	github.com/klauspost/compress v1.18.4
 	k8s.io/api v0.35.2

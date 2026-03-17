@@ -34,6 +34,7 @@ func main() {
 	contextName := flag.String("context", "", "Override kubeconfig context")
 	outputFormat := flag.String("output", string(agent.OutputText), "Output format: text or json")
 	agentName := flag.String("agent", string(agent.AgentDefault), "Specialist agent persona: default, debugger, security, optimizer, gitops")
+	mcpConfig := flag.String("mcp-config", "", "Path to MCP server config file (default: ~/.kopilot/mcp.json)")
 	flag.BoolVar(verbose, "v", false, "Enable verbose logging (shorthand)")
 
 	flag.Usage = func() {
@@ -58,6 +59,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  /mode              Show current execution mode\n")
 		fmt.Fprintf(os.Stderr, "  /agent             Show active agent and available agents\n")
 		fmt.Fprintf(os.Stderr, "  /agent <name>      Switch to a different specialist agent\n")
+		fmt.Fprintf(os.Stderr, "  /mcp list          List configured MCP servers\n")
+		fmt.Fprintf(os.Stderr, "  /mcp add <n> <url> Add an MCP server\n")
+		fmt.Fprintf(os.Stderr, "  /mcp delete <name> Remove an MCP server\n")
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
 		fmt.Fprintf(os.Stderr, "  KUBECONFIG    Path to kubeconfig file (default: ~/.kube/config)\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
@@ -68,6 +72,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  kopilot --agent optimizer        # Start as optimization specialist\n")
 		fmt.Fprintf(os.Stderr, "  kopilot --agent gitops           # Start as GitOps specialist\n")
 		fmt.Fprintf(os.Stderr, "  kopilot --agent sanitizer        # Start as cluster sanitizer\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --mcp-config ./mcp.json  # Use custom MCP server config\n")
 		fmt.Fprintf(os.Stderr, "  kopilot -v                       # Start with verbose logging\n")
 		fmt.Fprintf(os.Stderr, "  KUBECONFIG=./custom kopilot      # Use custom kubeconfig\n")
 	}
@@ -102,12 +107,12 @@ func main() {
 		log.Fatalf("Invalid --agent value: %v", agentErr)
 	}
 
-	if err := run(mode, *kubeconfig, *contextName, format, agentType); err != nil {
+	if err := run(mode, *kubeconfig, *contextName, format, agentType, *mcpConfig); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
 }
 
-func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, outputFormat agent.OutputFormat, agentType agent.AgentType) error {
+func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, outputFormat agent.OutputFormat, agentType agent.AgentType, mcpConfigPath string) error {
 	// Set version in agent package for display
 	agent.AppVersion = version
 
@@ -135,7 +140,7 @@ func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, ou
 
 	// Initialize and run the agent
 	log.Println("Starting kopilot agent...")
-	if err := agent.Run(k8sProvider, mode, outputFormat, agentType); err != nil {
+	if err := agent.Run(k8sProvider, mode, outputFormat, agentType, mcpConfigPath); err != nil {
 		return fmt.Errorf("failed to run agent: %w", err)
 	}
 

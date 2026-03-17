@@ -4,15 +4,17 @@
 package agent
 
 import (
-	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"math/rand/v2"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/chzyer/readline"
 	"github.com/e9169/kopilot/pkg/k8s"
 	copilot "github.com/github/copilot-sdk/go"
 )
@@ -54,7 +56,7 @@ const (
 	AgentOptimizer AgentType = "optimizer"
 	// AgentGitOps specializes in Flux/ArgoCD sync status and drift detection
 	AgentGitOps AgentType = "gitops"
-	// AgentSanitizer specializes in cluster linting, best-practice scoring, and compliance grading for reliability and operational hygiene
+	// AgentSanitizer specializes in cluster linting, best-practice scoring, and compliance grading
 	AgentSanitizer AgentType = "sanitizer"
 )
 
@@ -116,37 +118,92 @@ Rules:
 		Icon:          "🛡️",
 		Description:   "RBAC auditing, privilege escalation detection, and network policy review",
 		preferPremium: true,
-		Prompt: `You are a Kubernetes security auditor. Check for misconfigurations, privilege escalation paths, and exposure risks.
+		Prompt: `You are a Kubernetes security auditor with deep knowledge of the Kubernetes codebase, CIS Benchmark, NSA/CISA Kubernetes Hardening Guide, and real-world cluster operations.
 
+CRITICAL RULE — KNOWN LEGITIMATE EXCEPTIONS:
+Before flagging any finding, check whether the resource is a well-known Kubernetes system component
+that legitimately requires elevated privileges. These are NOT security findings — they are expected:
+
+  kube-proxy (kube-system)
+    - Requires privileged: true OR NET_ADMIN + NET_RAW capabilities to manage iptables/ipvs/nftables rules.
+    - Requires hostNetwork: true to intercept node-level traffic.
+    - CIS Benchmark and NSA/CISA explicitly acknowledge this as an accepted exception.
+
+  CNI plugins (calico-node, cilium, flannel, weave-net, kube-flannel — usually kube-system)
+    - Require privileged: true or a broad capability set (NET_ADMIN, NET_RAW, SYS_ADMIN) to program the
+      host network stack, create/manage virtual interfaces, eBPF programs, and kernel routes.
+    - hostNetwork: true and hostPath mounts of /etc/cni, /opt/cni, /var/lib/cni are standard and required.
+
+  Container runtimes and node agents (containerd, docker, cri-o agents; device plugins — kube-system/gpu-device-plugin etc.)
+    - May require hostPID: true or broad hostPath mounts to inspect and manage container processes on the node.
+
+  Storage provisioners and CSI drivers (csi-*, local-path-provisioner, rook-ceph, longhorn — kube-system/storage namespaces)
+    - Often require privileged: true for bind-mounts, device access, and filesystem operations.
+    - hostPath mounts of /dev, /sys, /proc are expected.
+
+  Metrics and observability agents (node-exporter, falco, datadog-agent, prometheus-node-exporter — monitoring namespaces)
+    - node-exporter requires hostPID: true, hostNetwork: true, and read-only hostPath mounts of /proc, /sys to collect metrics.
+    - Falco requires privileged: true or kernel module/eBPF loading to perform syscall tracing.
+
+  Cluster autoscaler and cloud controllers (cloud-controller-manager, cluster-autoscaler — kube-system)
+    - May run with broad RBAC but do not typically need host-level privileges.
+
+When you encounter any of the above, respond with:
+  ✅ EXPECTED: [resource] — [brief reason why this privilege is legitimate]
+  Note: This is a known system component. No remediation required.
+
+Only flag it if the privilege is found on an APPLICATION workload (non-system namespace, user-deployed pod).
+
+DEFAULT BEHAVIOUR — LIGHTWEIGHT MODE:
+Unless the user explicitly asks for a "full audit", "deep audit", "comprehensive review", or similar,
+always perform a LIGHTWEIGHT analysis:
+- Run at most 3–4 targeted kubectl commands focused on the most impactful risk area implied by the question
+- Prioritise findings that are immediately actionable
+- Distinguish clearly between system component exceptions and genuine application risks
+- Do NOT enumerate every namespace or every resource type unprompted
+- If the scope is ambiguous, pick the highest-risk area (privilege escalation on application pods first) and offer to go deeper
+
+FULL AUDIT MODE (only when explicitly requested):
 AUDIT SCOPE (check in this order):
-1. Privileged containers, root users, hostPID/hostNetwork/hostPath usage
+1. Privileged containers, root users, hostPID/hostNetwork/hostPath — skip known system exceptions above
 2. Overprivileged service accounts and RBAC wildcard permissions
 3. Secrets exposed as env vars or unnecessarily mounted
-4. Network policies — missing policies mean all traffic is allowed
+4. Network policies — missing policies mean all pod-to-pod traffic is allowed
 5. Pod Security Admission (PSA) levels and violations
 6. Image pull policies and use of :latest tags
+7. Anonymous authentication, insecure API server flags
+8. etcd encryption at rest status (if accessible)
 
 OUTPUT FORMAT (always use this structure):
-🛡️ AUDIT SUMMARY: X critical, Y high, Z medium findings
+🛡️ AUDIT SUMMARY: X critical, Y high, Z medium findings (plus any expected system exceptions)
 
-For each finding:
+For each real finding:
 🔴 CRITICAL / 🟠 HIGH / 🟡 MEDIUM / 🔵 LOW — FINDING TITLE
-  Resource: namespace/name
-  Risk: what an attacker can do with this
-  Fix: exact remediation (kubectl command or YAML snippet)
+  Resource: namespace/kind/name (container if relevant)
+  Risk: what an attacker can do with this misconfiguration
+  Fix: exact remediation step (kubectl patch command or minimal YAML diff)
+
+For each known system exception:
+✅ EXPECTED: namespace/kind/name — reason (e.g. "kube-proxy requires privileged for iptables management")
 
 ✅ CLEAN: list areas with no findings
 
+After a lightweight check, always end with:
+💡 TIP: Ask for a "full audit" to check all security areas in depth.
+
 Rules:
-- Always include the resource name and namespace
-- Prioritise: privilege escalation > secret exposure > network exposure > misconfig
+- Always include the resource name, namespace, and kind
+- Never flag system DaemonSets in kube-system for privileges they are architecturally required to hold
+- Prioritise: application privilege escalation > secret exposure > network exposure > system misconfig
+- When unsure if a privilege is legitimate, explain the trade-off rather than blanket-flagging it
 - No markdown tables or bold — use plain text with the emoji headers above`,
 		Examples: []string{
 			"Audit RBAC roles for overprivileged accounts",
-			"Find pods running as root or privileged",
+			"Find application pods running as root or privileged",
 			"Check network policies for exposed services",
 			"Review secret usage across namespaces",
 			"Are there any PSA violations in this cluster?",
+			"Is kube-proxy supposed to be privileged?",
 		},
 	},
 	AgentOptimizer: {
@@ -235,18 +292,16 @@ Rules:
 		Name:          "k8s-sanitizer",
 		DisplayName:   "K8s Sanitizer",
 		Icon:          "🧹",
-		Description:   "Cluster linting, best-practice scoring, and compliance grading for reliability and operational hygiene",
+		Description:   "Workload linting, best-practice scoring, and cluster health grading (probes, resource limits, image tags, replicas, container hygiene)",
 		preferPremium: true,
-		Prompt: `You are a Kubernetes cluster linter and best-practice compliance grader. You assess workloads for operational readiness, reliability, and hygiene — not security auditing.
-
-NOTE: Security-specific concerns (RBAC, privilege escalation, CVEs, network policies) are covered by the Security agent. This agent focuses on workload quality: health probes, resource management, replica availability, and image hygiene. CKS-* findings (security hardening gaps) are included in the compliance score because they affect the overall grade, but for a dedicated security audit use the Security agent.
+		Prompt: `You are a Kubernetes cluster sanitizer and workload linter. You score workloads against best-practice rules and give actionable grades.
 
 ANALYSIS APPROACH:
 1. Call sanitize_cluster to get the full findings and score for the target cluster
 2. Present the overall cluster grade and score prominently at the top
 3. Show per-namespace breakdowns, worst namespaces first
-4. Group findings by severity: Critical first, Major (reliability), then Minor (hygiene)
-5. Conclude with a prioritised remediation plan focused on reliability and best practices
+4. Group findings by severity: Critical (CKS-* misconfigurations) first, Major (reliability and operational risks), then Minor (hygiene)
+5. Conclude with a prioritised remediation plan
 
 OUTPUT FORMAT (always use this structure):
 🧹 SANITIZE REPORT: context-name
@@ -263,23 +318,26 @@ For each namespace (worst grade first):
     [MINOR]    RULE-ID [container]: message
 
 🔧 REMEDIATION PRIORITY:
-  1. Add health probes (BP-001, BP-002) — prevents traffic to broken pods
-  2. Set resource limits (BP-003, BP-004) — prevents OOM and node instability
-  3. Pin image tags (BP-005) — ensures reproducible deployments
-  4. Raise replica counts (BP-006) — improves availability
-  5. Address CKS-* findings — security hardening gaps; run the Security agent for a full audit
+  1. Fix CKS-* findings on APPLICATION workloads first — these are real misconfigurations (privileged, root, host network/PID/path)
+  2. Add health probes (BP-001, BP-002) — prevents traffic to broken pods
+  3. Set resource limits (BP-003, BP-004) — prevents OOM and node instability
+  4. Pin image tags (BP-005) — ensures reproducible deployments
+  5. Raise replica counts (BP-006) — improves availability
+  6. Harden container filesystem (BP-007, BP-008) — reduces blast radius
 
 Rules:
 - IMPORTANT: Show every individual workload with its findings — never collapse, summarise, or omit resources
 - Present the tool output content faithfully; do not replace resource details with counts or summaries
 - Sort namespaces worst-to-best (lowest score first); within each namespace sort workloads worst-to-best
 - For namespaces with no findings, show: ✅ namespace/name — A (0 findings)
-- Always explain the reliability or hygiene risk for each finding category
-- For CKS-* findings, note that deeper security analysis is available via the Security agent
+- Always explain what each rule checks and why it matters for reliability or operations
+- For CKS-* findings on known system components (kube-proxy, CNI plugins like calico-node/cilium/flannel,
+  CSI drivers, node-exporter, falco, cloud-controller-manager in kube-system), note that the privilege is
+  architecturally required and not a remediation target — suggest verifying no application pods share the pattern.
 - No markdown tables or bold — use plain text with the emoji headers above`,
 		Examples: []string{
 			"Sanitize my cluster and give me a grade",
-			"What is the compliance score for the production namespace?",
+			"What is the score for the production namespace?",
 			"Which workloads are missing health probes?",
 			"Show me all BP-006 violations (single-replica deployments)",
 			"How do I improve my cluster score from F to B?",
@@ -322,7 +380,7 @@ const (
 	colorCyan      = "\033[36m"
 	colorBold      = "\033[1m"
 	colorDim       = "\033[2m"
-	colorUserInput = "\033[38;5;183m" // Lavender-purple for user input (AI-themed)
+	colorUserInput = "\033[38;2;6;182;212m" // Cyan (#06b6d4) for user input, matching kopilot website
 
 	// Spinner animation label
 	spinnerLabel = "thinking"
@@ -335,6 +393,9 @@ const (
 	toolCheckAllClusters = "check_all_clusters"
 	toolKubectlExec      = "kubectl_exec"
 	toolSanitizeCluster  = "sanitize_cluster"
+	toolMCPListServers   = "mcp_list_servers"
+	toolMCPAddServer     = "mcp_add_server"
+	toolMCPDeleteServer  = "mcp_delete_server"
 )
 
 // Model configuration - can be overridden by environment variables
@@ -367,6 +428,8 @@ type agentState struct {
 	quotaUsed       float64
 	quotaTotal      float64
 	selectedAgent   AgentType
+	mcpConfigPath   string
+	needsMCPReload  bool
 }
 
 // loopDeps groups the immutable runtime dependencies shared across the interactive session loop.
@@ -444,12 +507,21 @@ For kubectl operations:
 - Explain what you're doing before executing commands
 - Interpret command output for the user
 
+Cluster targeting:
+- ALWAYS assume the current cluster context for any operation unless the user explicitly names a different cluster or the request clearly involves multiple clusters (e.g. comparisons, "all clusters", cross-cluster checks).
+- Never ask the user which cluster to use when a single-cluster operation is implied — just use the current context.
+- Use list_clusters to discover the current context when needed, then proceed immediately.
+- "the cluster", "my cluster", "this cluster", "the current cluster", "cluster status", "status of the cluster" → single-cluster operation, use get_cluster_status with the CURRENT context only.
+- "all clusters", "every cluster", "all my clusters", "check all", "across clusters", "compare" → multi-cluster operation, use check_all_clusters or compare_clusters.
+- When in doubt between single and multi, default to single (current context).
+
 Be helpful, clear, and conversational.`
 }
 
 // onMessageEvent handles the final complete assistant message.
 func onMessageEvent(event copilot.SessionEvent) {
 	if event.Data.Content != nil && *event.Data.Content != "" {
+		fmt.Println()
 		fmt.Println(*event.Data.Content)
 	}
 }
@@ -537,10 +609,16 @@ func getRandomExamples(count int) []string {
 	return shuffled[:count]
 }
 
-// Run starts the Copilot agent with Kubernetes cluster tools
-func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputFormat, agentType AgentType) error {
+// Run starts the Copilot agent with Kubernetes cluster tools.
+// mcpConfigPath is the path to the JSON file storing MCP server configurations;
+// pass an empty string to use the default (~/.kopilot/mcp.json).
+func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputFormat, agentType AgentType, mcpConfigPath string) error {
 	// Configure logging to stderr to avoid interfering with stdio-based JSON-RPC
 	log.SetOutput(os.Stderr)
+
+	if mcpConfigPath == "" {
+		mcpConfigPath = DefaultMCPConfigPath()
+	}
 
 	// Initialize agent state
 	state := &agentState{
@@ -548,6 +626,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 		outputFormat:    outputFormat,
 		quotaPercentage: -1,
 		selectedAgent:   agentType,
+		mcpConfigPath:   mcpConfigPath,
 	}
 
 	// Create a cancellable context for the entire agent lifecycle
@@ -582,7 +661,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	setupSessionEventHandler(session, &isIdle, state)
 
 	if !isJSONOutput(outputFormat) {
-		printBanner(k8sProvider, mode, agentType)
+		printBanner(k8sProvider, mode, agentType, mcpConfigPath)
 	}
 
 	// Mark as idle so user can start typing immediately
@@ -600,7 +679,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 }
 
 // printBanner prints the ASCII art logo and startup status to stdout.
-func printBanner(k8sProvider *k8s.Provider, mode ExecutionMode, agentType AgentType) {
+func printBanner(k8sProvider *k8s.Provider, mode ExecutionMode, agentType AgentType, mcpConfigPath string) {
 	fmt.Println()
 	fmt.Printf("%s  $    $$                       $     \"\"$$               $$           %s\n", colorCyan, colorReset)
 	fmt.Printf("%s  $  $$     #$$$    $ $$$     $$$       $$      $$$1   $$$$$$$   %s[))%s  \n", colorCyan, colorRed, colorReset)
@@ -622,6 +701,7 @@ func printBanner(k8sProvider *k8s.Provider, mode ExecutionMode, agentType AgentT
 
 	printBannerMode(mode)
 	printBannerAgent(agentType)
+	printBannerMCP(mcpConfigPath)
 	printBannerExamples(agentType)
 }
 
@@ -643,6 +723,20 @@ func printBannerAgent(agentType AgentType) {
 	fmt.Printf("  %s●%s Agent: %s%s %s%s — %s\n", colorCyan, colorReset, colorCyan, def.Icon, def.DisplayName, colorReset, def.Description)
 }
 
+// printBannerMCP prints a summary of configured MCP servers at startup.
+func printBannerMCP(mcpConfigPath string) {
+	servers, err := listMCPServers(mcpConfigPath)
+	if err != nil || len(servers) == 0 {
+		return
+	}
+	fmt.Printf("  %s●%s MCP servers: %s", colorCyan, colorReset, colorDim)
+	names := make([]string, len(servers))
+	for i, s := range servers {
+		names[i] = s.Name
+	}
+	fmt.Printf("%s%s\n", strings.Join(names, ", "), colorReset)
+}
+
 // printBannerExamples prints the "Try asking" prompt examples.
 func printBannerExamples(agentType AgentType) {
 	examples := getRandomExamples(3)
@@ -660,7 +754,7 @@ func printBannerExamples(agentType AgentType) {
 	}
 	fmt.Println()
 	fmt.Printf("  %sType your request to get started. Enter 'exit' to quit.%s\n", colorDim, colorReset)
-	fmt.Printf("  %sHint: /help to see all commands | /agent list to see specialist agents.%s\n", colorDim, colorReset)
+	fmt.Printf("  %sHint: /help to see all commands or /agent list to see specialist agents.%s\n", colorDim, colorReset)
 	fmt.Println()
 }
 
@@ -708,6 +802,11 @@ func buildCustomAgents() []copilot.CustomAgentConfig {
 
 // buildSystemMessage composes the full system message, optionally including the
 // specialist prompt for the currently selected agent persona.
+//
+// When a specialist is active, a bridging directive is inserted between the base
+// and the specialist prompt. This ensures the model applies the specialist lens
+// to ALL requests — including generic ones like "analyze the cluster" or "check
+// the current cluster" — rather than falling back to the generalist persona.
 func buildSystemMessage(agentType AgentType) string {
 	base := getSystemMessage()
 	if agentType == AgentDefault {
@@ -717,13 +816,49 @@ func buildSystemMessage(agentType AgentType) string {
 	if !ok {
 		return base
 	}
-	return base + "\n\n" + def.Prompt
+
+	// The bridge directive is intentionally placed between the base and the
+	// specialist prompt so the model understands the active mode before reading
+	// the specialist's detailed instructions.
+	bridge := fmt.Sprintf(
+		"ACTIVE SPECIALIST: %s %s\n"+
+			"You are currently operating in %s specialist mode. "+
+			"For ALL user requests — including broad or generic ones such as \"analyze\", "+
+			"\"check\", \"review\", \"assess\", \"what do you think about my cluster\", "+
+			"or any request that does not specify a domain — you MUST interpret and answer "+
+			"exclusively through the %s specialist lens defined below. "+
+			"Never give a generic Kubernetes overview when a specialist agent is active; "+
+			"always frame every analysis, finding, and recommendation through that specialist's domain.",
+		def.Icon, def.DisplayName,
+		def.DisplayName,
+		def.DisplayName,
+	)
+
+	return base + "\n\n" + bridge + "\n\n" + def.Prompt
+}
+
+// loadMCPServersForSession reads the MCP config and converts it to the SDK map type.
+// Returns nil when no servers are configured so that MCPServers is omitted from the session.
+func loadMCPServersForSession(cfgPath string) map[string]copilot.MCPServerConfig {
+	servers, err := listMCPServers(cfgPath)
+	if err != nil || len(servers) == 0 {
+		return nil
+	}
+	m := make(map[string]copilot.MCPServerConfig, len(servers))
+	for _, s := range servers {
+		m[s.Name] = copilot.MCPServerConfig{
+			"type": s.Type,
+			"url":  s.URL,
+		}
+	}
+	return m
 }
 
 // createSessionWithModel creates a new Copilot session with specified model
 func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProvider *k8s.Provider, state *agentState, model string) (*copilot.Session, error) {
 	tools := defineTools(k8sProvider, state)
 	systemMessage := buildSystemMessage(state.selectedAgent)
+	mcpServers := loadMCPServersForSession(state.mcpConfigPath)
 
 	session, err := client.CreateSession(ctx, &copilot.SessionConfig{
 		Model:               model,
@@ -732,9 +867,10 @@ func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProv
 		CustomAgents:        buildCustomAgents(),
 		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
 		SystemMessage: &copilot.SystemMessageConfig{
-			Mode:    "append",
+			Mode:    "replace",
 			Content: systemMessage,
 		},
+		MCPServers: mcpServers,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
@@ -800,6 +936,18 @@ func selectModelForQuery(query string, agentType AgentType) string {
 // spinnerFrames are the braille dot animation frames shown while the AI is thinking.
 var spinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
 
+// spinnerPaused is set to 1 while a tool needs exclusive terminal access (e.g. interactive confirmation prompt).
+var spinnerPaused atomic.Int32
+
+// pauseSpinner suppresses the spinner and clears any in-progress spinner line.
+// The caller must call the returned resume function when done.
+func pauseSpinner() func() {
+	spinnerPaused.Store(1)
+	time.Sleep(120 * time.Millisecond) // let any in-flight tick finish
+	fmt.Printf("\r\033[K")             // erase whatever the spinner last drew
+	return func() { spinnerPaused.Store(0) }
+}
+
 // startSpinner launches an animated spinner in a goroutine and returns a stop function.
 // The caller must call the returned function to stop the spinner and erase the line.
 func startSpinner() func() {
@@ -814,7 +962,9 @@ func startSpinner() func() {
 				fmt.Printf("\r\033[K") // erase spinner line
 				return
 			case <-ticker.C:
-				fmt.Printf("\r  %s%s%s %s...", colorCyan, spinnerFrames[i%len(spinnerFrames)], colorReset, spinnerLabel)
+				if spinnerPaused.Load() == 0 {
+					fmt.Printf("\r  %s%s%s %s...", colorCyan, spinnerFrames[i%len(spinnerFrames)], colorReset, spinnerLabel)
+				}
 				i++
 			}
 		}
@@ -825,9 +975,15 @@ func startSpinner() func() {
 	}
 }
 
-// waitForIdle waits until the session is idle
+// waitForIdle waits until the session is idle, with a ceiling of 5 minutes
+// to prevent an infinite hang if session.idle never fires (e.g. on SDK error).
 func waitForIdle(isIdle *bool) {
+	deadline := time.Now().Add(5 * time.Minute)
 	for !*isIdle {
+		if time.Now().After(deadline) {
+			*isIdle = true // unblock; the session is assumed dead
+			return
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
 }
@@ -839,36 +995,85 @@ func waitForIdleWithSpinner(isIdle *bool) {
 		return
 	}
 	stop := startSpinner()
+	deadline := time.Now().Add(5 * time.Minute)
 	for !*isIdle {
+		if time.Now().After(deadline) {
+			*isIdle = true
+			break
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	stop()
 }
 
-// quotaPrompt returns the prompt prefix string with quota info when available.
-func quotaPrompt(state *agentState) string {
+// cyanPainter implements readline.Painter to colour typed input text cyan
+// without affecting the prompt itself.
+type cyanPainter struct{}
+
+func (p *cyanPainter) Paint(line []rune, _ int) []rune {
+	if len(line) == 0 {
+		return line
+	}
+	prefix := []rune(colorUserInput)
+	suffix := []rune(colorReset)
+	result := make([]rune, 0, len(prefix)+len(line)+len(suffix))
+	result = append(result, prefix...)
+	result = append(result, line...)
+	result = append(result, suffix...)
+	return result
+}
+
+// rlPromptString returns a readline-compatible prompt string.
+// ANSI escape sequences are wrapped in \x01…\x02 so readline does not count
+// them toward the visible line length, preventing cursor misalignment.
+// Input text colouring is handled by cyanPainter, not the prompt string.
+func rlPromptString(state *agentState) string {
+	wrap := func(seq string) string { return "\x01" + seq + "\x02" }
 	if isJSONOutput(state.outputFormat) || state.quotaUnlimited || state.quotaPercentage < 0 {
 		return "❯ "
 	}
 	pct := state.quotaPercentage
-	var indicator string
+	var col, indicator string
 	switch {
 	case pct <= 5:
-		indicator = colorRed + fmt.Sprintf("[⚠ %.0f%%]", pct) + colorReset
+		col = colorRed
+		indicator = fmt.Sprintf("[⚠ %.0f%%]", pct)
 	case pct <= 20:
-		indicator = colorYellow + fmt.Sprintf("[%.0f%%]", pct) + colorReset
+		col = colorYellow
+		indicator = fmt.Sprintf("[%.0f%%]", pct)
 	default:
-		indicator = colorDim + fmt.Sprintf("[%.0f%%]", pct) + colorReset
+		col = colorDim
+		indicator = fmt.Sprintf("[%.0f%%]", pct)
 	}
-	return indicator + " ❯ "
+	return wrap(col) + indicator + wrap(colorReset) + " ❯ "
 }
 
-// readUserInput reads and trims user input from stdin
-func readUserInput(reader *bufio.Reader, state *agentState) (string, error) {
-	fmt.Print(quotaPrompt(state))
-	fmt.Print(colorUserInput) // Color the user's typed text
-	input, err := reader.ReadString('\n')
-	fmt.Print(colorReset) // Reset color after input is submitted
+// newReadlineInstance creates a readline instance with in-session history.
+func newReadlineInstance() (*readline.Instance, error) {
+	return readline.NewEx(&readline.Config{
+		HistoryLimit:           500,
+		InterruptPrompt:        "^C",
+		EOFPrompt:              "exit",
+		HistorySearchFold:      true,
+		DisableAutoSaveHistory: false,
+		Painter:                &cyanPainter{},
+	})
+}
+
+// readUserInput reads and trims user input via the readline instance.
+// Ctrl+C clears the current line and continues; Ctrl+D exits gracefully.
+func readUserInput(rl *readline.Instance, state *agentState) (string, error) {
+	rl.SetPrompt(rlPromptString(state))
+	input, err := rl.Readline()
+	fmt.Print(colorReset) // reset typed-text colour
+	if err == readline.ErrInterrupt {
+		// Ctrl+C — cancel current line, continue loop
+		return "", nil
+	}
+	if err == io.EOF {
+		// Ctrl+D — treat as exit
+		return "exit", nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("error reading input: %w", err)
 	}
@@ -881,6 +1086,23 @@ func isExitCommand(input string) bool {
 	return lower == "exit" || lower == "quit"
 }
 
+// isUnknownSlashCommand returns true when the input starts with '/' but is not
+// handled by any known command dispatcher (handleModeSwitch, handleAgentCommand, handleMCPCommand).
+func isUnknownSlashCommand(input string) bool {
+	if !strings.HasPrefix(input, "/") {
+		return false
+	}
+	lower := strings.TrimSpace(strings.ToLower(input))
+	// Known prefixes — keep in sync with handleModeSwitch, handleAgentCommand, handleMCPCommand.
+	known := []string{"/help", "/mode", "/status", "/readonly", "/interactive", "/agent", "/mcp"}
+	for _, prefix := range known {
+		if lower == prefix || strings.HasPrefix(lower, prefix+" ") {
+			return false
+		}
+	}
+	return true
+}
+
 // printHelpMessage displays all available runtime commands.
 func printHelpMessage(state *agentState) {
 	agentNames := strings.Join(allAgentNames(), " | ")
@@ -888,18 +1110,23 @@ func printHelpMessage(state *agentState) {
 	fmt.Printf("  %s━━ Kopilot Commands ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
 	fmt.Println()
 	fmt.Printf("  %sSession%s\n", colorDim, colorReset)
-	fmt.Printf("    %s/help%s              show this help message\n", colorCyan, colorReset)
+	fmt.Printf("    %s/help%s             show this help message\n", colorCyan, colorReset)
 	fmt.Printf("    %sexit%s, %squit%s        exit Kopilot\n", colorCyan, colorReset, colorCyan, colorReset)
 	fmt.Println()
 	fmt.Printf("  %sExecution Mode%s\n", colorDim, colorReset)
-	fmt.Printf("    %s/mode%s, %s/status%s     show current execution mode\n", colorCyan, colorReset, colorCyan, colorReset)
-	fmt.Printf("    %s/readonly%s          switch to 🔒 read-only mode (blocks write operations)\n", colorCyan, colorReset)
-	fmt.Printf("    %s/interactive%s       switch to 🔓 interactive mode (prompts before writes)\n", colorCyan, colorReset)
+	fmt.Printf("    %s/mode%s, %s/status%s       show current execution mode\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("    %s/readonly%s [on]       switch to 🔒 read-only mode (blocks write operations)\n", colorCyan, colorReset)
+	fmt.Printf("    %s/interactive%s [on]    switch to 🔓 interactive mode (prompts before writes)\n", colorCyan, colorReset)
 	fmt.Println()
 	fmt.Printf("  %sSpecialist Agents%s\n", colorDim, colorReset)
 	fmt.Printf("    %s/agent%s             show active agent and available roster\n", colorCyan, colorReset)
 	fmt.Printf("    %s/agent list%s        same as /agent\n", colorCyan, colorReset)
 	fmt.Printf("    %s/agent <name>%s      switch agent  [ %s ]\n", colorCyan, colorReset, agentNames)
+	fmt.Println()
+	fmt.Printf("  %sMCP Servers%s\n", colorDim, colorReset)
+	fmt.Printf("    %s/mcp list%s              list configured MCP servers\n", colorCyan, colorReset)
+	fmt.Printf("    %s/mcp add <name> <url>%s  add or update an MCP server\n", colorCyan, colorReset)
+	fmt.Printf("    %s/mcp delete <name>%s     remove an MCP server\n", colorCyan, colorReset)
 	fmt.Println()
 	fmt.Printf("  %sCurrent mode: %s  |  Active agent: %s%s\n", colorDim, state.mode, state.selectedAgent, colorReset)
 	fmt.Println()
@@ -1050,14 +1277,14 @@ type turnState struct {
 
 // processTurn handles a single interactive turn: read input, dispatch commands, send to model.
 // Returns (exit=true) when the user has chosen to quit, or an error on failure.
-func processTurn(deps *loopDeps, reader *bufio.Reader, ts *turnState) (exit bool, err error) {
+func processTurn(deps *loopDeps, rl *readline.Instance, ts *turnState) (exit bool, err error) {
 	if isJSONOutput(deps.state.outputFormat) {
 		waitForIdle(deps.isIdle)
 	} else {
 		waitForIdleWithSpinner(deps.isIdle)
 	}
 
-	input, err := readUserInput(reader, deps.state)
+	input, err := readUserInput(rl, deps.state)
 	if err != nil {
 		return false, err
 	}
@@ -1079,7 +1306,116 @@ func processTurn(deps *loopDeps, reader *bufio.Reader, ts *turnState) (exit bool
 		return false, err
 	}
 
-	return false, sendToModel(deps, ts, input)
+	if handled, err := dispatchMCPCommand(deps, input, ts); handled {
+		return false, err
+	}
+
+	// Reject unrecognised slash commands rather than forwarding them to the model.
+	if isUnknownSlashCommand(input) {
+		cmd := strings.Fields(input)[0]
+		fmt.Printf("  %s●%s Unknown command %s%s%s — type %s/help%s to see available commands\n",
+			colorRed, colorReset, colorBold, cmd, colorReset, colorCyan, colorReset)
+		return false, nil
+	}
+
+	if err := sendToModel(deps, ts, input); err != nil {
+		return false, err
+	}
+
+	// If an MCP tool modified the config during this turn, reload the session so
+	// the next turn connects to the updated set of MCP servers.
+	if deps.state.needsMCPReload {
+		deps.state.needsMCPReload = false
+		fmt.Printf("  %s●%s Reloading session with updated MCP servers...%s\n", colorCyan, colorReset, "")
+		newSession, err := switchToModel(deps, ts.session, ts.model)
+		if err != nil {
+			return false, err
+		}
+		ts.session = newSession
+	}
+	return false, nil
+}
+
+// dispatchMCPCommand processes /mcp commands.
+// Returns (true, err) when the input was an MCP command (whether it succeeded or not).
+func dispatchMCPCommand(deps *loopDeps, input string, ts *turnState) (bool, error) {
+	trimmed := strings.TrimSpace(input)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "/mcp") {
+		return false, nil
+	}
+
+	parts := strings.Fields(trimmed)
+	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == "list") {
+		printMCPList(deps.state.mcpConfigPath)
+		return true, nil
+	}
+
+	subCmd := strings.ToLower(parts[1])
+	switch subCmd {
+	case "add":
+		if len(parts) < 4 {
+			fmt.Printf("  %s●%s Usage: /mcp add <name> <url>\n", colorRed, colorReset)
+			return true, nil
+		}
+		name, url := parts[2], parts[3]
+		if err := addMCPServer(deps.state.mcpConfigPath, MCPServerConfig{Name: name, Type: "http", URL: url}); err != nil {
+			fmt.Printf("  %s●%s Error: %v\n", colorRed, colorReset, err)
+			return true, nil
+		}
+		fmt.Printf("  %s●%s Added MCP server %s%s%s — reloading session...\n", colorGreen, colorReset, colorCyan, name, colorReset)
+		newSession, err := switchToModel(deps, ts.session, ts.model)
+		if err != nil {
+			return true, err
+		}
+		ts.session = newSession
+		return true, nil
+
+	case "delete", "remove":
+		if len(parts) < 3 {
+			fmt.Printf("  %s●%s Usage: /mcp delete <name>\n", colorRed, colorReset)
+			return true, nil
+		}
+		name := parts[2]
+		if err := deleteMCPServer(deps.state.mcpConfigPath, name); err != nil {
+			fmt.Printf("  %s●%s Error: %v\n", colorRed, colorReset, err)
+			return true, nil
+		}
+		fmt.Printf("  %s●%s Removed MCP server %s%s%s — reloading session...\n", colorGreen, colorReset, colorCyan, name, colorReset)
+		newSession, err := switchToModel(deps, ts.session, ts.model)
+		if err != nil {
+			return true, err
+		}
+		ts.session = newSession
+		return true, nil
+
+	default:
+		fmt.Printf("  %s●%s Unknown /mcp sub-command %s%q%s — use: list, add, delete\n",
+			colorRed, colorReset, colorBold, subCmd, colorReset)
+		return true, nil
+	}
+}
+
+// printMCPList prints all configured MCP servers to stdout.
+func printMCPList(cfgPath string) {
+	servers, err := listMCPServers(cfgPath)
+	if err != nil {
+		fmt.Printf("  %s●%s Error reading MCP config: %v\n", colorRed, colorReset, err)
+		return
+	}
+	fmt.Println()
+	fmt.Printf("  %s━━ MCP Servers (%s) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, cfgPath, colorReset)
+	fmt.Println()
+	if len(servers) == 0 {
+		fmt.Printf("  %sNo MCP servers configured.%s\n", colorDim, colorReset)
+		fmt.Printf("  %sUse /mcp add <name> <url> to add one.%s\n", colorDim, colorReset)
+	} else {
+		for i, s := range servers {
+			fmt.Printf("  %s[%d]%s %s%s%s\n", colorCyan, i+1, colorReset, colorCyan, s.Name, colorReset)
+			fmt.Printf("      Type: %s\n", s.Type)
+			fmt.Printf("      URL:  %s\n", s.URL)
+		}
+	}
+	fmt.Println()
 }
 
 // dispatchAgentCommand processes /agent commands.
@@ -1101,6 +1437,41 @@ func dispatchAgentCommand(deps *loopDeps, input string, ts *turnState) (bool, er
 	return true, nil
 }
 
+// longRunningKeywords are phrases that signal a broad, multi-step analysis
+// that will invoke many tool calls and take significantly longer than a simple query.
+var longRunningKeywords = []string{
+	"full", "complete", "all", "entire", "everything", "thorough", "comprehensive",
+	"audit", "analyze", "analyse", "analysis", "review", "assess", "assessment",
+	"scan", "check everything", "check all", "deep dive", "deep-dive",
+	"top to bottom", "end to end",
+}
+
+// isLongRunningQuery returns true when the prompt looks like a broad analysis
+// that will fan out into many sequential tool calls.
+func isLongRunningQuery(input string, agentType AgentType) bool {
+	// Specialist agents doing any form of analysis are inherently multi-step.
+	if agentType != AgentDefault {
+		lower := strings.ToLower(input)
+		for _, kw := range longRunningKeywords {
+			if strings.Contains(lower, kw) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// printLongRunningWarning shows a one-line heads-up before a query that will take a while.
+func printLongRunningWarning(agentType AgentType) {
+	label := "analysis"
+	if agentType != AgentDefault {
+		def := agentDefinitions[agentType]
+		label = def.DisplayName + " analysis"
+	}
+	fmt.Printf("  %s⏳ This %s may take a while — running multiple checks against your cluster...%s\n",
+		colorDim, label, colorReset)
+}
+
 // sendToModel selects the best model for the query and sends it, updating ts as needed.
 func sendToModel(deps *loopDeps, ts *turnState, input string) error {
 	if optimalModel := selectModelForQuery(input, deps.state.selectedAgent); optimalModel != ts.model {
@@ -1110,6 +1481,9 @@ func sendToModel(deps *loopDeps, ts *turnState, input string) error {
 		}
 		ts.session = newSession
 		ts.model = optimalModel
+	}
+	if !isJSONOutput(deps.state.outputFormat) && isLongRunningQuery(input, deps.state.selectedAgent) {
+		printLongRunningWarning(deps.state.selectedAgent)
 	}
 	*deps.isIdle = false
 	_, err := ts.session.Send(deps.ctx, copilot.MessageOptions{Prompt: input})
@@ -1121,10 +1495,15 @@ func sendToModel(deps *loopDeps, ts *turnState, input string) error {
 
 // interactiveLoopWithModelSelection handles interactive conversation with dynamic model selection.
 func interactiveLoopWithModelSelection(deps *loopDeps, initialSession *copilot.Session) error {
-	reader := bufio.NewReader(os.Stdin)
+	rl, err := newReadlineInstance()
+	if err != nil {
+		return fmt.Errorf("failed to initialise readline: %w", err)
+	}
+	defer rl.Close()
+
 	ts := &turnState{session: initialSession, model: modelCostEffective}
 	for {
-		exit, err := processTurn(deps, reader, ts)
+		exit, err := processTurn(deps, rl, ts)
 		if err != nil {
 			return err
 		}

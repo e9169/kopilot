@@ -24,8 +24,8 @@ func TestDefineTools(t *testing.T) {
 
 	tools := defineTools(provider, state)
 
-	if len(tools) != 6 {
-		t.Errorf("defineTools() returned %d tools, want 6", len(tools))
+	if len(tools) != 9 {
+		t.Errorf("defineTools() returned %d tools, want 9", len(tools))
 	}
 
 	expectedNames := map[string]bool{
@@ -35,6 +35,9 @@ func TestDefineTools(t *testing.T) {
 		toolCheckAllClusters: false,
 		toolKubectlExec:      false,
 		toolSanitizeCluster:  false,
+		toolMCPListServers:   false,
+		toolMCPAddServer:     false,
+		toolMCPDeleteServer:  false,
 	}
 
 	for _, tool := range tools {
@@ -501,8 +504,8 @@ func TestDefineToolsWithState(t *testing.T) {
 
 	tools := defineTools(provider, state)
 
-	if len(tools) != 6 {
-		t.Errorf("defineTools() returned %d tools, want 6", len(tools))
+	if len(tools) != 9 {
+		t.Errorf("defineTools() returned %d tools, want 9", len(tools))
 	}
 
 	// Verify kubectl_exec tool exists
