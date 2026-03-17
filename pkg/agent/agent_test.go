@@ -16,6 +16,7 @@ import (
 const (
 	errToolDescriptionEmpty = "Tool description is empty"
 	errToolNameFormat       = "Tool name = %s, want %s"
+	testClusterContext      = "my-cluster"
 )
 
 func TestDefineTools(t *testing.T) {
@@ -561,12 +562,12 @@ func TestParseSanitizerAgentCaseInsensitive(t *testing.T) {
 
 func TestSanitizeClusterParams(t *testing.T) {
 	params := SanitizeClusterParams{
-		Context:       "my-cluster",
+		Context:       testClusterContext,
 		Namespace:     "production",
 		IncludeSystem: false,
 	}
-	if params.Context != "my-cluster" {
-		t.Errorf("Context = %q, want %q", params.Context, "my-cluster")
+	if params.Context != testClusterContext {
+		t.Errorf("Context = %q, want %q", params.Context, testClusterContext)
 	}
 	if params.Namespace != "production" {
 		t.Errorf("Namespace = %q, want %q", params.Namespace, "production")

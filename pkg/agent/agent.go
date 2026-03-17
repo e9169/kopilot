@@ -384,6 +384,9 @@ const (
 
 	// Spinner animation label
 	spinnerLabel = "thinking"
+
+	// fmtErrorBullet is the format string for inline error messages
+	fmtErrorBullet = "  %s●%s Error: %v\n"
 )
 
 const (
@@ -1359,7 +1362,7 @@ func dispatchMCPCommand(deps *loopDeps, input string, ts *turnState) (bool, erro
 		}
 		name, url := parts[2], parts[3]
 		if err := addMCPServer(deps.state.mcpConfigPath, MCPServerConfig{Name: name, Type: "http", URL: url}); err != nil {
-			fmt.Printf("  %s●%s Error: %v\n", colorRed, colorReset, err)
+			fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
 			return true, nil
 		}
 		fmt.Printf("  %s●%s Added MCP server %s%s%s — reloading session...\n", colorGreen, colorReset, colorCyan, name, colorReset)
@@ -1377,7 +1380,7 @@ func dispatchMCPCommand(deps *loopDeps, input string, ts *turnState) (bool, erro
 		}
 		name := parts[2]
 		if err := deleteMCPServer(deps.state.mcpConfigPath, name); err != nil {
-			fmt.Printf("  %s●%s Error: %v\n", colorRed, colorReset, err)
+			fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
 			return true, nil
 		}
 		fmt.Printf("  %s●%s Removed MCP server %s%s%s — reloading session...\n", colorGreen, colorReset, colorCyan, name, colorReset)
@@ -1426,7 +1429,7 @@ func dispatchAgentCommand(deps *loopDeps, input string, ts *turnState) (bool, er
 		return false, nil
 	}
 	if agentErr != nil {
-		fmt.Printf("  %s●%s Error: %v\n", colorRed, colorReset, agentErr)
+		fmt.Printf(fmtErrorBullet, colorRed, colorReset, agentErr)
 		return true, nil
 	}
 	newSession, err := applyAgentSwitch(deps, newAgent, ts.session, ts.model)
