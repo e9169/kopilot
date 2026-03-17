@@ -13,6 +13,16 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
+const (
+	testNsKubeSystem           = "kube-system"
+	testWorkloadNsADeployApp   = "ns-a/Deployment/app"
+	testBuildSanitizeContext   = "test-context"
+	testIngressHost            = "myapp.example.com"
+	testLBSourceRange          = "10.0.0.0/8" // NOSONAR - test data for LoadBalancer source range validation
+	errCollectSanitizeFindings = "collectSanitizeFindings() returned error: %v"
+	errCollectNetworkResources = "collectNetworkResources() error: %v"
+)
+
 // TestGetClusterVersionWithContext tests cluster version retrieval with context
 func TestGetClusterVersionWithContext(t *testing.T) {
 	clientset := fake.NewClientset()
@@ -93,7 +103,7 @@ func TestCollectNamespaceListWithContext(t *testing.T) {
 	namespaces := &corev1.NamespaceList{
 		Items: []corev1.Namespace{
 			{ObjectMeta: metav1.ObjectMeta{Name: "default"}},
-			{ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}},
+			{ObjectMeta: metav1.ObjectMeta{Name: testNsKubeSystem}},
 			{ObjectMeta: metav1.ObjectMeta{Name: "my-app"}},
 		},
 	}
@@ -395,7 +405,7 @@ func TestCollectSanitizeFindingsCleanWorkload(t *testing.T) {
 
 	findings, allWorkloads, err := collectSanitizeFindings(ctx, clientset, "", false)
 	if err != nil {
-		t.Fatalf("collectSanitizeFindings() returned error: %v", err)
+		t.Fatalf(errCollectSanitizeFindings, err)
 	}
 
 	if len(allWorkloads) != 1 {
@@ -442,7 +452,7 @@ func TestCollectSanitizeFindingsViolations(t *testing.T) {
 
 	findings, allWorkloads, err := collectSanitizeFindings(ctx, clientset, "", false)
 	if err != nil {
-		t.Fatalf("collectSanitizeFindings() returned error: %v", err)
+		t.Fatalf(errCollectSanitizeFindings, err)
 	}
 
 	if len(allWorkloads) != 1 {
@@ -466,7 +476,7 @@ func TestCollectSanitizeFindingsViolations(t *testing.T) {
 func TestCollectSanitizeFindingsSystemNamespaceExclusion(t *testing.T) {
 	replicas := int32(1)
 	sysWorkload := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: testNsKubeSystem},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "coredns"}},
@@ -483,7 +493,7 @@ func TestCollectSanitizeFindingsSystemNamespaceExclusion(t *testing.T) {
 	// Default: system namespaces excluded
 	_, excluded, err := collectSanitizeFindings(ctx, clientset, "", false)
 	if err != nil {
-		t.Fatalf("collectSanitizeFindings() returned error: %v", err)
+		t.Fatalf(errCollectSanitizeFindings, err)
 	}
 	if len(excluded) != 0 {
 		t.Errorf("expected 0 workloads scanned (kube-system excluded), got %d", len(excluded))
@@ -521,7 +531,7 @@ func TestCollectSanitizeFindingsNamespaceFilter(t *testing.T) {
 
 	_, filtered, err := collectSanitizeFindings(ctx, clientset, "staging", false)
 	if err != nil {
-		t.Fatalf("collectSanitizeFindings() returned error: %v", err)
+		t.Fatalf(errCollectSanitizeFindings, err)
 	}
 	if len(filtered) != 1 {
 		t.Errorf("namespace filter: expected 1 workload, got %d", len(filtered))
@@ -531,15 +541,15 @@ func TestCollectSanitizeFindingsNamespaceFilter(t *testing.T) {
 // TestBuildSanitizeResult verifies scoring and grouping logic
 func TestBuildSanitizeResult(t *testing.T) {
 	findings := []SanitizeFinding{
-		{RuleID: "CKS-001", Severity: SanitizeCritical, Workload: "ns-a/Deployment/app", Container: "app", Penalty: sanitizePenaltyCritical},
-		{RuleID: "BP-001", Severity: SanitizeMajor, Workload: "ns-a/Deployment/app", Container: "app", Penalty: sanitizePenaltyMajor},
+		{RuleID: "CKS-001", Severity: SanitizeCritical, Workload: testWorkloadNsADeployApp, Container: "app", Penalty: sanitizePenaltyCritical},
+		{RuleID: "BP-001", Severity: SanitizeMajor, Workload: testWorkloadNsADeployApp, Container: "app", Penalty: sanitizePenaltyMajor},
 		{RuleID: "BP-009", Severity: SanitizeMinor, Workload: "ns-b/Deployment/svc", Penalty: sanitizePenaltyMinor},
 	}
 
-	result := buildSanitizeResult("test-context", findings, []string{"ns-a/Deployment/app", "ns-b/Deployment/svc"})
+	result := buildSanitizeResult(testBuildSanitizeContext, findings, []string{testWorkloadNsADeployApp, "ns-b/Deployment/svc"})
 
-	if result.Context != "test-context" {
-		t.Errorf("Context = %q, want %q", result.Context, "test-context")
+	if result.Context != testBuildSanitizeContext {
+		t.Errorf("Context = %q, want %q", result.Context, testBuildSanitizeContext)
 	}
 	if result.TotalWorkloads != 2 {
 		t.Errorf("TotalWorkloads = %d, want 2", result.TotalWorkloads)
@@ -613,7 +623,7 @@ func TestCheckServiceRulesLoadBalancerNoSourceRanges(t *testing.T) {
 func TestCheckServiceRulesLoadBalancerWithSourceRanges(t *testing.T) {
 	spec := corev1.ServiceSpec{
 		Type:                     corev1.ServiceTypeLoadBalancer,
-		LoadBalancerSourceRanges: []string{"10.0.0.0/8"},
+		LoadBalancerSourceRanges: []string{testLBSourceRange},
 		Selector:                 map[string]string{"app": "myapp"},
 	}
 	var findings []SanitizeFinding
@@ -676,7 +686,7 @@ func TestCheckServiceRulesCleanService(t *testing.T) {
 func TestCheckIngressRulesNoTLS(t *testing.T) {
 	spec := networkingv1.IngressSpec{
 		Rules: []networkingv1.IngressRule{
-			{Host: "myapp.example.com"},
+			{Host: testIngressHost},
 		},
 	}
 	var findings []SanitizeFinding
@@ -718,7 +728,7 @@ func TestCheckIngressRulesWildcardHost(t *testing.T) {
 // TestCheckIngressRulesEmptyHost verifies ING-002 fires for empty host entries.
 func TestCheckIngressRulesEmptyHost(t *testing.T) {
 	spec := networkingv1.IngressSpec{
-		TLS:   []networkingv1.IngressTLS{{Hosts: []string{"myapp.example.com"}}},
+		TLS:   []networkingv1.IngressTLS{{Hosts: []string{testIngressHost}}},
 		Rules: []networkingv1.IngressRule{{Host: ""}},
 	}
 	var findings []SanitizeFinding
@@ -739,10 +749,10 @@ func TestCheckIngressRulesEmptyHost(t *testing.T) {
 func TestCheckIngressRulesClean(t *testing.T) {
 	spec := networkingv1.IngressSpec{
 		TLS: []networkingv1.IngressTLS{
-			{Hosts: []string{"myapp.example.com"}, SecretName: "tls-secret"},
+			{Hosts: []string{testIngressHost}, SecretName: "tls-secret"},
 		},
 		Rules: []networkingv1.IngressRule{
-			{Host: "myapp.example.com"},
+			{Host: testIngressHost},
 		},
 	}
 	var findings []SanitizeFinding
@@ -770,7 +780,7 @@ func TestCollectNetworkResourcesWithService(t *testing.T) {
 	var allWorkloads []string
 	err := collectNetworkResources(ctx, clientset, "", false, &allFindings, &allWorkloads)
 	if err != nil {
-		t.Fatalf("collectNetworkResources() error: %v", err)
+		t.Fatalf(errCollectNetworkResources, err)
 	}
 
 	if len(allWorkloads) != 1 {
@@ -799,7 +809,7 @@ func TestCollectNetworkResourcesSkipsKubernetesService(t *testing.T) {
 	var allFindings []SanitizeFinding
 	var allWorkloads []string
 	if err := collectNetworkResources(ctx, clientset, "", false, &allFindings, &allWorkloads); err != nil {
-		t.Fatalf("collectNetworkResources() error: %v", err)
+		t.Fatalf(errCollectNetworkResources, err)
 	}
 
 	if len(allWorkloads) != 0 {
@@ -816,7 +826,7 @@ func TestCollectNetworkResourcesWithIngress(t *testing.T) {
 			// No TLS → ING-001
 			Rules: []networkingv1.IngressRule{
 				{
-					Host: "myapp.example.com",
+					Host: testIngressHost,
 					IngressRuleValue: networkingv1.IngressRuleValue{
 						HTTP: &networkingv1.HTTPIngressRuleValue{
 							Paths: []networkingv1.HTTPIngressPath{
@@ -839,7 +849,7 @@ func TestCollectNetworkResourcesWithIngress(t *testing.T) {
 	var allFindings []SanitizeFinding
 	var allWorkloads []string
 	if err := collectNetworkResources(ctx, clientset, "", false, &allFindings, &allWorkloads); err != nil {
-		t.Fatalf("collectNetworkResources() error: %v", err)
+		t.Fatalf(errCollectNetworkResources, err)
 	}
 
 	if len(allWorkloads) != 1 {
@@ -859,7 +869,7 @@ func TestCollectNetworkResourcesWithIngress(t *testing.T) {
 // TestCollectNetworkResourcesSystemNamespaceExclusion verifies system namespace filtering applies.
 func TestCollectNetworkResourcesSystemNamespaceExclusion(t *testing.T) {
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: testNsKubeSystem},
 		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: map[string]string{"app": "coredns"}},
 	}
 	clientset := fake.NewClientset(svc)
@@ -868,7 +878,7 @@ func TestCollectNetworkResourcesSystemNamespaceExclusion(t *testing.T) {
 	var allFindings []SanitizeFinding
 	var allWorkloads []string
 	if err := collectNetworkResources(ctx, clientset, "", false, &allFindings, &allWorkloads); err != nil {
-		t.Fatalf("collectNetworkResources() error: %v", err)
+		t.Fatalf(errCollectNetworkResources, err)
 	}
 
 	if len(allWorkloads) != 0 {
@@ -892,7 +902,7 @@ func TestCollectNetworkResourcesNamespaceFilter(t *testing.T) {
 	var allFindings []SanitizeFinding
 	var allWorkloads []string
 	if err := collectNetworkResources(ctx, clientset, "production", false, &allFindings, &allWorkloads); err != nil {
-		t.Fatalf("collectNetworkResources() error: %v", err)
+		t.Fatalf(errCollectNetworkResources, err)
 	}
 
 	if len(allWorkloads) != 1 {

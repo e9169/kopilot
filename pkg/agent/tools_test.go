@@ -8,6 +8,13 @@ import (
 	"github.com/e9169/kopilot/pkg/k8s"
 )
 
+const (
+	testRuleIDCKS001 = "CKS-001"
+	testRuleIDBP001  = "BP-001"
+	testWorkloadAppA = "default/Deployment/app-a"
+	testWorkloadAppB = "default/Deployment/app-b"
+)
+
 // ── sanitizeGradeIcon ─────────────────────────────────────────────────────────
 
 func TestSanitizeGradeIcon(t *testing.T) {
@@ -143,8 +150,8 @@ func TestStripNamespaceFromWorkload(t *testing.T) {
 
 func TestFilterSanitizeFindings(t *testing.T) {
 	findings := []k8s.SanitizeFinding{
-		{RuleID: "CKS-001", Severity: k8s.SanitizeCritical},
-		{RuleID: "BP-001", Severity: k8s.SanitizeMajor},
+		{RuleID: testRuleIDCKS001, Severity: k8s.SanitizeCritical},
+		{RuleID: testRuleIDBP001, Severity: k8s.SanitizeMajor},
 		{RuleID: "BP-007", Severity: k8s.SanitizeMinor},
 		{RuleID: "CKS-002", Severity: k8s.SanitizeCritical},
 	}
@@ -176,20 +183,20 @@ func TestFilterSanitizeFindingsEmpty(t *testing.T) {
 
 func TestGroupFindingsByWorkload(t *testing.T) {
 	findings := []k8s.SanitizeFinding{
-		{Workload: "default/Deployment/app-a", RuleID: "BP-001"},
-		{Workload: "default/Deployment/app-b", RuleID: "BP-002"},
-		{Workload: "default/Deployment/app-a", RuleID: "BP-003"},
+		{Workload: testWorkloadAppA, RuleID: testRuleIDBP001},
+		{Workload: testWorkloadAppB, RuleID: "BP-002"},
+		{Workload: testWorkloadAppA, RuleID: "BP-003"},
 	}
 
 	groups := groupFindingsByWorkload(findings)
 	if len(groups) != 2 {
 		t.Errorf("groupFindingsByWorkload() = %d groups, want 2", len(groups))
 	}
-	if len(groups["default/Deployment/app-a"]) != 2 {
-		t.Errorf("app-a has %d findings, want 2", len(groups["default/Deployment/app-a"]))
+	if len(groups[testWorkloadAppA]) != 2 {
+		t.Errorf("app-a has %d findings, want 2", len(groups[testWorkloadAppA]))
 	}
-	if len(groups["default/Deployment/app-b"]) != 1 {
-		t.Errorf("app-b has %d findings, want 1", len(groups["default/Deployment/app-b"]))
+	if len(groups[testWorkloadAppB]) != 1 {
+		t.Errorf("app-b has %d findings, want 1", len(groups[testWorkloadAppB]))
 	}
 }
 
@@ -238,8 +245,8 @@ func TestSortedWorkloadKeysByScoreAlphaOnTie(t *testing.T) {
 func TestWriteSanitizeFindingGroup(t *testing.T) {
 	var sb strings.Builder
 	findings := []k8s.SanitizeFinding{
-		{RuleID: "CKS-001", Container: "app", Message: "privileged container"},
-		{RuleID: "BP-001", Container: "", Message: "no livenessProbe"},
+		{RuleID: testRuleIDCKS001, Container: "app", Message: "privileged container"},
+		{RuleID: testRuleIDBP001, Container: "", Message: "no livenessProbe"},
 	}
 	writeSanitizeFindingGroup(&sb, "CRITICAL", findings)
 	out := sb.String()
@@ -247,13 +254,13 @@ func TestWriteSanitizeFindingGroup(t *testing.T) {
 	if !strings.Contains(out, "[CRITICAL]") {
 		t.Error("output missing [CRITICAL] label")
 	}
-	if !strings.Contains(out, "CKS-001") {
+	if !strings.Contains(out, testRuleIDCKS001) {
 		t.Error("output missing rule ID CKS-001")
 	}
 	if !strings.Contains(out, "[app]") {
 		t.Error("output missing container name [app]")
 	}
-	if !strings.Contains(out, "BP-001") {
+	if !strings.Contains(out, testRuleIDBP001) {
 		t.Error("output missing rule ID BP-001")
 	}
 	// A finding with no container should not emit "[]"
@@ -289,7 +296,7 @@ func TestFormatSanitizeResult(t *testing.T) {
 				Grade:     "B",
 				Findings: []k8s.SanitizeFinding{
 					{
-						RuleID:    "BP-001",
+						RuleID:    testRuleIDBP001,
 						Severity:  k8s.SanitizeMajor,
 						Workload:  "production/Deployment/my-app",
 						Container: "app",
@@ -312,7 +319,7 @@ func TestFormatSanitizeResult(t *testing.T) {
 	if !strings.Contains(result, "production") {
 		t.Error("formatSanitizeResult output missing namespace")
 	}
-	if !strings.Contains(result, "BP-001") {
+	if !strings.Contains(result, testRuleIDBP001) {
 		t.Error("formatSanitizeResult output missing finding rule ID")
 	}
 	if !strings.Contains(result, "MAJOR") {

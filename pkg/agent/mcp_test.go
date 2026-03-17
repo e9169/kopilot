@@ -6,20 +6,30 @@ import (
 	"testing"
 )
 
+const (
+	testMCPConfigFile    = "mcp.json"
+	testMCPServerName    = "my-server"
+	testMCPServerURL     = "http://localhost:8080"
+	testMCPServerName2   = "test-server"
+	testMCPServerURL2    = "http://localhost:9090"
+	testMCPServerNewURL  = "http://new-url:9090"
+	errListMCPServers    = "listMCPServers() error: %v"
+)
+
 // TestDefaultMCPConfigPath verifies it returns a non-empty path ending in mcp.json.
 func TestDefaultMCPConfigPath(t *testing.T) {
 	path := DefaultMCPConfigPath()
 	if path == "" {
 		t.Fatal("DefaultMCPConfigPath() returned empty string")
 	}
-	if filepath.Base(path) != "mcp.json" {
+	if filepath.Base(path) != testMCPConfigFile {
 		t.Errorf("DefaultMCPConfigPath() = %q, want path ending with mcp.json", path)
 	}
 }
 
 // TestLoadMCPConfigNonExistent verifies that a missing config file returns an empty config.
 func TestLoadMCPConfigNonExistent(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mcp.json")
+	path := filepath.Join(t.TempDir(), testMCPConfigFile)
 	cfg, err := loadMCPConfig(path)
 	if err != nil {
 		t.Fatalf("loadMCPConfig() on nonexistent file returned error: %v", err)
@@ -51,10 +61,10 @@ func TestLoadMCPConfigInvalidJSON(t *testing.T) {
 
 // TestSaveMCPConfigAndLoad verifies a round-trip save and load of config.
 func TestSaveMCPConfigAndLoad(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "subdir", "mcp.json")
+	path := filepath.Join(t.TempDir(), "subdir", testMCPConfigFile)
 	cfg := &mcpConfig{
 		Servers: []MCPServerConfig{
-			{Name: "my-server", Type: "http", URL: "http://localhost:8080"},
+			{Name: testMCPServerName, Type: "http", URL: testMCPServerURL},
 		},
 	}
 
@@ -69,17 +79,17 @@ func TestSaveMCPConfigAndLoad(t *testing.T) {
 	if len(loaded.Servers) != 1 {
 		t.Errorf("got %d servers after round-trip, want 1", len(loaded.Servers))
 	}
-	if loaded.Servers[0].Name != "my-server" {
-		t.Errorf("server name = %q, want %q", loaded.Servers[0].Name, "my-server")
+	if loaded.Servers[0].Name != testMCPServerName {
+		t.Errorf("server name = %q, want %q", loaded.Servers[0].Name, testMCPServerName)
 	}
-	if loaded.Servers[0].URL != "http://localhost:8080" {
-		t.Errorf("server URL = %q, want %q", loaded.Servers[0].URL, "http://localhost:8080")
+	if loaded.Servers[0].URL != testMCPServerURL {
+		t.Errorf("server URL = %q, want %q", loaded.Servers[0].URL, testMCPServerURL)
 	}
 }
 
 // TestSaveMCPConfigFileMode verifies the saved file has mode 0600.
 func TestSaveMCPConfigFileMode(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mcp.json")
+	path := filepath.Join(t.TempDir(), testMCPConfigFile)
 	if err := saveMCPConfig(path, &mcpConfig{}); err != nil {
 		t.Fatalf("saveMCPConfig() error: %v", err)
 	}
@@ -126,22 +136,22 @@ func TestValidateMCPServerName(t *testing.T) {
 
 // TestAddMCPServerNew verifies adding a new server populates the config file.
 func TestAddMCPServerNew(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mcp.json")
+	path := filepath.Join(t.TempDir(), testMCPConfigFile)
 
-	entry := MCPServerConfig{Name: "test-server", URL: "http://localhost:9090"}
+	entry := MCPServerConfig{Name: testMCPServerName2, URL: testMCPServerURL2}
 	if err := addMCPServer(path, entry); err != nil {
 		t.Fatalf("addMCPServer() error: %v", err)
 	}
 
 	servers, err := listMCPServers(path)
 	if err != nil {
-		t.Fatalf("listMCPServers() error: %v", err)
+		t.Fatalf(errListMCPServers, err)
 	}
 	if len(servers) != 1 {
 		t.Errorf("got %d servers, want 1", len(servers))
 	}
-	if servers[0].Name != "test-server" {
-		t.Errorf("server name = %q, want %q", servers[0].Name, "test-server")
+	if servers[0].Name != testMCPServerName2 {
+		t.Errorf("server name = %q, want %q", servers[0].Name, testMCPServerName2)
 	}
 	// Type should default to "http" when not set
 	if servers[0].Type != "http" {
@@ -151,19 +161,19 @@ func TestAddMCPServerNew(t *testing.T) {
 
 // TestAddMCPServerUpdate verifies that adding a server with an existing name updates it.
 func TestAddMCPServerUpdate(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mcp.json")
+	path := filepath.Join(t.TempDir(), testMCPConfigFile)
 
 	_ = addMCPServer(path, MCPServerConfig{Name: "server1", URL: "http://old-url:8080"})
 	_ = addMCPServer(path, MCPServerConfig{Name: "server2", URL: "http://other:8081"})
 
 	// Update server1 to a new URL
-	if err := addMCPServer(path, MCPServerConfig{Name: "server1", URL: "http://new-url:9090"}); err != nil {
+	if err := addMCPServer(path, MCPServerConfig{Name: "server1", URL: testMCPServerNewURL}); err != nil {
 		t.Fatalf("addMCPServer() update error: %v", err)
 	}
 
 	servers, err := listMCPServers(path)
 	if err != nil {
-		t.Fatalf("listMCPServers() error: %v", err)
+		t.Fatalf(errListMCPServers, err)
 	}
 	if len(servers) != 2 {
 		t.Errorf("got %d servers after update, want 2", len(servers))
@@ -172,8 +182,8 @@ func TestAddMCPServerUpdate(t *testing.T) {
 	for _, s := range servers {
 		if s.Name == "server1" {
 			found = true
-			if s.URL != "http://new-url:9090" {
-				t.Errorf("server1 URL = %q, want %q", s.URL, "http://new-url:9090")
+			if s.URL != testMCPServerNewURL {
+				t.Errorf("server1 URL = %q, want %q", s.URL, testMCPServerNewURL)
 			}
 		}
 	}
@@ -184,7 +194,7 @@ func TestAddMCPServerUpdate(t *testing.T) {
 
 // TestAddMCPServerValidation verifies validation errors are returned.
 func TestAddMCPServerValidation(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mcp.json")
+	path := filepath.Join(t.TempDir(), testMCPConfigFile)
 
 	// Invalid name
 	err := addMCPServer(path, MCPServerConfig{Name: "bad name!", URL: "http://example.com"})
@@ -207,7 +217,7 @@ func TestAddMCPServerValidation(t *testing.T) {
 
 // TestDeleteMCPServerExisting verifies removing a known server.
 func TestDeleteMCPServerExisting(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mcp.json")
+	path := filepath.Join(t.TempDir(), testMCPConfigFile)
 
 	_ = addMCPServer(path, MCPServerConfig{Name: "server1", URL: "http://host1:8080"})
 	_ = addMCPServer(path, MCPServerConfig{Name: "server2", URL: "http://host2:8080"})
@@ -218,7 +228,7 @@ func TestDeleteMCPServerExisting(t *testing.T) {
 
 	servers, err := listMCPServers(path)
 	if err != nil {
-		t.Fatalf("listMCPServers() error: %v", err)
+		t.Fatalf(errListMCPServers, err)
 	}
 	if len(servers) != 1 {
 		t.Errorf("got %d servers after delete, want 1", len(servers))
@@ -230,7 +240,7 @@ func TestDeleteMCPServerExisting(t *testing.T) {
 
 // TestDeleteMCPServerNotFound verifies that deleting non-existent server returns an error.
 func TestDeleteMCPServerNotFound(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mcp.json")
+	path := filepath.Join(t.TempDir(), testMCPConfigFile)
 
 	err := deleteMCPServer(path, "nonexistent")
 	if err == nil {
@@ -240,7 +250,7 @@ func TestDeleteMCPServerNotFound(t *testing.T) {
 
 // TestListMCPServersEmpty verifies listing an empty (nonexistent) config returns an empty slice.
 func TestListMCPServersEmpty(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mcp.json")
+	path := filepath.Join(t.TempDir(), testMCPConfigFile)
 
 	servers, err := listMCPServers(path)
 	if err != nil {
@@ -253,7 +263,7 @@ func TestListMCPServersEmpty(t *testing.T) {
 
 // TestListMCPServersMultiple verifies listing several servers added in sequence.
 func TestListMCPServersMultiple(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mcp.json")
+	path := filepath.Join(t.TempDir(), testMCPConfigFile)
 
 	_ = addMCPServer(path, MCPServerConfig{Name: "s1", URL: "http://host1:8080"})
 	_ = addMCPServer(path, MCPServerConfig{Name: "s2", URL: "http://host2:8080"})
@@ -261,7 +271,7 @@ func TestListMCPServersMultiple(t *testing.T) {
 
 	servers, err := listMCPServers(path)
 	if err != nil {
-		t.Fatalf("listMCPServers() error: %v", err)
+		t.Fatalf(errListMCPServers, err)
 	}
 	if len(servers) != 3 {
 		t.Errorf("got %d servers, want 3", len(servers))

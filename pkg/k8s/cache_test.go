@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+const (
+	testClusterVersion = "v1.28.0"
+	errNewProvider     = "NewProvider() failed: %v"
+)
+
 // TestCacheBasicFunctionality tests basic cache operations
 func TestCacheBasicFunctionality(t *testing.T) {
 	kubeconfigPath, cleanup := createTempKubeconfig(t, 1)
@@ -12,7 +17,7 @@ func TestCacheBasicFunctionality(t *testing.T) {
 
 	provider, err := NewProvider(kubeconfigPath)
 	if err != nil {
-		t.Fatalf("NewProvider() failed: %v", err)
+		t.Fatalf(errNewProvider, err)
 	}
 
 	contextName := testContext1
@@ -21,7 +26,7 @@ func TestCacheBasicFunctionality(t *testing.T) {
 			Name:    "test-cluster",
 			Context: contextName,
 		},
-		Version: "v1.28.0",
+		Version: testClusterVersion,
 	}
 
 	// Test caching a status
@@ -44,7 +49,7 @@ func TestCacheExpiration(t *testing.T) {
 
 	provider, err := NewProvider(kubeconfigPath)
 	if err != nil {
-		t.Fatalf("NewProvider() failed: %v", err)
+		t.Fatalf(errNewProvider, err)
 	}
 
 	// Set a very short TTL for testing
@@ -81,11 +86,11 @@ func TestClearCache(t *testing.T) {
 
 	provider, err := NewProvider(kubeconfigPath)
 	if err != nil {
-		t.Fatalf("NewProvider() failed: %v", err)
+		t.Fatalf(errNewProvider, err)
 	}
 
 	// Cache two statuses
-	provider.cacheStatus(testContext1, &ClusterStatus{Version: "v1.28.0"})
+	provider.cacheStatus(testContext1, &ClusterStatus{Version: testClusterVersion})
 	provider.cacheStatus(testContext2, &ClusterStatus{Version: "v1.28.1"})
 
 	// Verify both are cached
@@ -115,7 +120,7 @@ func TestSetCacheTTL(t *testing.T) {
 
 	provider, err := NewProvider(kubeconfigPath)
 	if err != nil {
-		t.Fatalf("NewProvider() failed: %v", err)
+		t.Fatalf(errNewProvider, err)
 	}
 
 	// Default TTL should be 1 minute
@@ -140,10 +145,10 @@ func BenchmarkCacheWrite(b *testing.B) {
 
 	provider, err := NewProvider(kubeconfigPath)
 	if err != nil {
-		b.Fatalf("NewProvider() failed: %v", err)
+		b.Fatalf(errNewProvider, err)
 	}
 
-	status := &ClusterStatus{Version: "v1.28.0"}
+	status := &ClusterStatus{Version: testClusterVersion}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -158,10 +163,10 @@ func BenchmarkCacheRead(b *testing.B) {
 
 	provider, err := NewProvider(kubeconfigPath)
 	if err != nil {
-		b.Fatalf("NewProvider() failed: %v", err)
+		b.Fatalf(errNewProvider, err)
 	}
 
-	status := &ClusterStatus{Version: "v1.28.0"}
+	status := &ClusterStatus{Version: testClusterVersion}
 	provider.cacheStatus(testContext1, status)
 
 	b.ResetTimer()
