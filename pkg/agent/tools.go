@@ -670,7 +670,7 @@ type SanitizeClusterParams struct {
 func defineSanitizeClusterTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
 	return copilot.DefineTool(
 		toolSanitizeCluster,
-		"Lint all Deployments, StatefulSets, and DaemonSets in a cluster against Kubernetes best practices and security rules (CIS Benchmark, NSA/CISA guidelines). Returns a 0-100 score with an A-F grade, per-namespace breakdowns, and detailed findings per workload.",
+		"Lint all Deployments, StatefulSets, DaemonSets, and Services in a cluster against Kubernetes best practices for reliability and operational hygiene. Returns a 0-100 score with an A-F grade, per-namespace breakdowns, and detailed findings per workload. CKS-* findings (security hardening gaps) are included in the compliance score; use the Security agent for a dedicated security audit.",
 		func(params SanitizeClusterParams, inv copilot.ToolInvocation) (any, error) {
 			ctx := context.Background()
 			report, err := k8sProvider.SanitizeCluster(ctx, params.Context, params.Namespace, params.IncludeSystem)
