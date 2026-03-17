@@ -7,13 +7,13 @@ import (
 )
 
 const (
-	testMCPConfigFile    = "mcp.json"
-	testMCPServerName    = "my-server"
-	testMCPServerURL     = "http://localhost:8080"
-	testMCPServerName2   = "test-server"
-	testMCPServerURL2    = "http://localhost:9090"
-	testMCPServerNewURL  = "http://new-url:9090"
-	errListMCPServers    = "listMCPServers() error: %v"
+	testMCPConfigFile   = "mcp.json"
+	testMCPServerName   = "my-server"
+	testMCPServerURL    = "http://localhost:8080"
+	testMCPServerName2  = "test-server"
+	testMCPServerURL2   = "http://localhost:9090"
+	testMCPServerNewURL = "http://new-url:9090"
+	errListMCPServers   = "listMCPServers() error: %v"
 )
 
 // TestDefaultMCPConfigPath verifies it returns a non-empty path ending in mcp.json.
