@@ -8,6 +8,9 @@ import (
 	"regexp"
 )
 
+// mcpHTTPType is the only supported MCP server transport type.
+const mcpHTTPType = "http"
+
 // mcpServerName is the allowed pattern for MCP server names.
 var mcpServerNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
@@ -96,9 +99,9 @@ func addMCPServer(path string, entry MCPServerConfig) error {
 	}
 	// Only "http" transport is supported by the SDK today.
 	if entry.Type == "" {
-		entry.Type = "http"
+		entry.Type = mcpHTTPType
 	}
-	if entry.Type != "http" {
+	if entry.Type != mcpHTTPType {
 		return fmt.Errorf("unsupported MCP server type %q: only \"http\" is supported", entry.Type)
 	}
 

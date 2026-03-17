@@ -936,7 +936,7 @@ func defineMCPAddServerTool(state *agentState) copilot.Tool {
 		toolMCPAddServer,
 		"Add or update an MCP (Model Context Protocol) server. The new server is persisted to the config file and will be active from the next session.",
 		func(params MCPAddServerParams, _ copilot.ToolInvocation) (any, error) {
-			entry := MCPServerConfig{Name: params.Name, Type: "http", URL: params.URL}
+			entry := MCPServerConfig{Name: params.Name, Type: mcpHTTPType, URL: params.URL}
 			if err := addMCPServer(state.mcpConfigPath, entry); err != nil {
 				return nil, fmt.Errorf("failed to add MCP server: %w", err)
 			}

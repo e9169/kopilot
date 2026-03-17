@@ -7,6 +7,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -566,5 +567,335 @@ func TestBuildSanitizeResult(t *testing.T) {
 	}
 	if result.Grade != "A" {
 		t.Errorf("cluster Grade = %q, want A", result.Grade)
+	}
+}
+
+// ── checkServiceRules ─────────────────────────────────────────────────────────
+
+// TestCheckServiceRulesNodePort verifies SVC-001 fires for NodePort services.
+func TestCheckServiceRulesNodePort(t *testing.T) {
+	spec := corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort}
+	var findings []SanitizeFinding
+	checkServiceRules(spec, "default/Service/my-svc", &findings)
+
+	if len(findings) == 0 {
+		t.Fatal("expected at least one finding for NodePort service, got none")
+	}
+	found := false
+	for _, f := range findings {
+		if f.RuleID == "SVC-001" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("SVC-001 not found in findings: %v", findings)
+	}
+}
+
+// TestCheckServiceRulesLoadBalancerNoSourceRanges verifies SVC-002 fires.
+func TestCheckServiceRulesLoadBalancerNoSourceRanges(t *testing.T) {
+	spec := corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}
+	var findings []SanitizeFinding
+	checkServiceRules(spec, "default/Service/lb-svc", &findings)
+
+	found := false
+	for _, f := range findings {
+		if f.RuleID == "SVC-002" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("SVC-002 not found in findings: %v", findings)
+	}
+}
+
+// TestCheckServiceRulesLoadBalancerWithSourceRanges verifies SVC-002 does NOT fire.
+func TestCheckServiceRulesLoadBalancerWithSourceRanges(t *testing.T) {
+	spec := corev1.ServiceSpec{
+		Type:                     corev1.ServiceTypeLoadBalancer,
+		LoadBalancerSourceRanges: []string{"10.0.0.0/8"},
+		Selector:                 map[string]string{"app": "myapp"},
+	}
+	var findings []SanitizeFinding
+	checkServiceRules(spec, "default/Service/lb-restricted", &findings)
+
+	for _, f := range findings {
+		if f.RuleID == "SVC-002" {
+			t.Errorf("SVC-002 should not fire when loadBalancerSourceRanges is set")
+		}
+	}
+}
+
+// TestCheckServiceRulesNoSelector verifies SVC-003 fires for selector-less ClusterIP services.
+func TestCheckServiceRulesNoSelector(t *testing.T) {
+	spec := corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}
+	var findings []SanitizeFinding
+	checkServiceRules(spec, "default/Service/headless", &findings)
+
+	found := false
+	for _, f := range findings {
+		if f.RuleID == "SVC-003" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("SVC-003 not found in findings: %v", findings)
+	}
+}
+
+// TestCheckServiceRulesExternalNameNoSVC003 verifies ExternalName services skip SVC-003.
+func TestCheckServiceRulesExternalNameNoSVC003(t *testing.T) {
+	spec := corev1.ServiceSpec{Type: corev1.ServiceTypeExternalName}
+	var findings []SanitizeFinding
+	checkServiceRules(spec, "default/Service/ext", &findings)
+
+	for _, f := range findings {
+		if f.RuleID == "SVC-003" {
+			t.Error("SVC-003 should not fire for ExternalName services")
+		}
+	}
+}
+
+// TestCheckServiceRulesCleanService verifies no findings for a well-configured ClusterIP.
+func TestCheckServiceRulesCleanService(t *testing.T) {
+	spec := corev1.ServiceSpec{
+		Type:     corev1.ServiceTypeClusterIP,
+		Selector: map[string]string{"app": "myapp"},
+	}
+	var findings []SanitizeFinding
+	checkServiceRules(spec, "default/Service/clean", &findings)
+
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings for clean service, got %d: %v", len(findings), findings)
+	}
+}
+
+// ── checkIngressRules ─────────────────────────────────────────────────────────
+
+// TestCheckIngressRulesNoTLS verifies ING-001 fires when TLS is absent.
+func TestCheckIngressRulesNoTLS(t *testing.T) {
+	spec := networkingv1.IngressSpec{
+		Rules: []networkingv1.IngressRule{
+			{Host: "myapp.example.com"},
+		},
+	}
+	var findings []SanitizeFinding
+	checkIngressRules(spec, "default/Ingress/my-ing", &findings)
+
+	found := false
+	for _, f := range findings {
+		if f.RuleID == "ING-001" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ING-001 not found for Ingress without TLS: %v", findings)
+	}
+}
+
+// TestCheckIngressRulesWildcardHost verifies ING-002 fires for wildcard/empty hosts.
+func TestCheckIngressRulesWildcardHost(t *testing.T) {
+	spec := networkingv1.IngressSpec{
+		TLS: []networkingv1.IngressTLS{{Hosts: []string{"*.example.com"}}},
+		Rules: []networkingv1.IngressRule{
+			{Host: "*.example.com"},
+		},
+	}
+	var findings []SanitizeFinding
+	checkIngressRules(spec, "default/Ingress/wildcard-ing", &findings)
+
+	found := false
+	for _, f := range findings {
+		if f.RuleID == "ING-002" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ING-002 not found for wildcard host Ingress: %v", findings)
+	}
+}
+
+// TestCheckIngressRulesEmptyHost verifies ING-002 fires for empty host entries.
+func TestCheckIngressRulesEmptyHost(t *testing.T) {
+	spec := networkingv1.IngressSpec{
+		TLS:   []networkingv1.IngressTLS{{Hosts: []string{"myapp.example.com"}}},
+		Rules: []networkingv1.IngressRule{{Host: ""}},
+	}
+	var findings []SanitizeFinding
+	checkIngressRules(spec, "default/Ingress/empty-host-ing", &findings)
+
+	found := false
+	for _, f := range findings {
+		if f.RuleID == "ING-002" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ING-002 not found for Ingress with empty host: %v", findings)
+	}
+}
+
+// TestCheckIngressRulesClean verifies no findings for a properly configured Ingress.
+func TestCheckIngressRulesClean(t *testing.T) {
+	spec := networkingv1.IngressSpec{
+		TLS: []networkingv1.IngressTLS{
+			{Hosts: []string{"myapp.example.com"}, SecretName: "tls-secret"},
+		},
+		Rules: []networkingv1.IngressRule{
+			{Host: "myapp.example.com"},
+		},
+	}
+	var findings []SanitizeFinding
+	checkIngressRules(spec, "default/Ingress/clean-ing", &findings)
+
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings for clean Ingress, got %d: %v", len(findings), findings)
+	}
+}
+
+// ── collectNetworkResources ───────────────────────────────────────────────────
+
+// TestCollectNetworkResourcesWithService verifies Services are scanned and findings reported.
+func TestCollectNetworkResourcesWithService(t *testing.T) {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-svc", Namespace: "production"},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeNodePort, // triggers SVC-001
+		},
+	}
+	clientset := fake.NewClientset(svc)
+	ctx := context.Background()
+
+	var allFindings []SanitizeFinding
+	var allWorkloads []string
+	err := collectNetworkResources(ctx, clientset, "", false, &allFindings, &allWorkloads)
+	if err != nil {
+		t.Fatalf("collectNetworkResources() error: %v", err)
+	}
+
+	if len(allWorkloads) != 1 {
+		t.Errorf("got %d workloads, want 1", len(allWorkloads))
+	}
+	found := false
+	for _, f := range allFindings {
+		if f.RuleID == "SVC-001" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("SVC-001 not found in network resource findings: %v", allFindings)
+	}
+}
+
+// TestCollectNetworkResourcesSkipsKubernetesService verifies the built-in kubernetes Service is skipped.
+func TestCollectNetworkResourcesSkipsKubernetesService(t *testing.T) {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"},
+		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP},
+	}
+	clientset := fake.NewClientset(svc)
+	ctx := context.Background()
+
+	var allFindings []SanitizeFinding
+	var allWorkloads []string
+	if err := collectNetworkResources(ctx, clientset, "", false, &allFindings, &allWorkloads); err != nil {
+		t.Fatalf("collectNetworkResources() error: %v", err)
+	}
+
+	if len(allWorkloads) != 0 {
+		t.Errorf("kubernetes/default Service should be skipped but got %d workloads", len(allWorkloads))
+	}
+}
+
+// TestCollectNetworkResourcesWithIngress verifies Ingresses are scanned.
+func TestCollectNetworkResourcesWithIngress(t *testing.T) {
+	pathType := networkingv1.PathTypePrefix
+	ing := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-ing", Namespace: "production"},
+		Spec: networkingv1.IngressSpec{
+			// No TLS → ING-001
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: "myapp.example.com",
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{Path: "/", PathType: &pathType, Backend: networkingv1.IngressBackend{
+									Service: &networkingv1.IngressServiceBackend{
+										Name: "my-svc",
+										Port: networkingv1.ServiceBackendPort{Number: 80},
+									},
+								}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	clientset := fake.NewClientset(ing)
+	ctx := context.Background()
+
+	var allFindings []SanitizeFinding
+	var allWorkloads []string
+	if err := collectNetworkResources(ctx, clientset, "", false, &allFindings, &allWorkloads); err != nil {
+		t.Fatalf("collectNetworkResources() error: %v", err)
+	}
+
+	if len(allWorkloads) != 1 {
+		t.Errorf("got %d workloads, want 1", len(allWorkloads))
+	}
+	found := false
+	for _, f := range allFindings {
+		if f.RuleID == "ING-001" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ING-001 not found in ingress findings: %v", allFindings)
+	}
+}
+
+// TestCollectNetworkResourcesSystemNamespaceExclusion verifies system namespace filtering applies.
+func TestCollectNetworkResourcesSystemNamespaceExclusion(t *testing.T) {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "coredns", Namespace: "kube-system"},
+		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: map[string]string{"app": "coredns"}},
+	}
+	clientset := fake.NewClientset(svc)
+	ctx := context.Background()
+
+	var allFindings []SanitizeFinding
+	var allWorkloads []string
+	if err := collectNetworkResources(ctx, clientset, "", false, &allFindings, &allWorkloads); err != nil {
+		t.Fatalf("collectNetworkResources() error: %v", err)
+	}
+
+	if len(allWorkloads) != 0 {
+		t.Errorf("kube-system service should be excluded, got %d workloads", len(allWorkloads))
+	}
+}
+
+// TestCollectNetworkResourcesNamespaceFilter verifies targetNamespace scoping works.
+func TestCollectNetworkResourcesNamespaceFilter(t *testing.T) {
+	svc1 := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "svc-prod", Namespace: "production"},
+		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: map[string]string{"app": "x"}},
+	}
+	svc2 := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "svc-staging", Namespace: "staging"},
+		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: map[string]string{"app": "y"}},
+	}
+	clientset := fake.NewClientset(svc1, svc2)
+	ctx := context.Background()
+
+	var allFindings []SanitizeFinding
+	var allWorkloads []string
+	if err := collectNetworkResources(ctx, clientset, "production", false, &allFindings, &allWorkloads); err != nil {
+		t.Fatalf("collectNetworkResources() error: %v", err)
+	}
+
+	if len(allWorkloads) != 1 {
+		t.Errorf("got %d workloads with targetNamespace=production, want 1", len(allWorkloads))
 	}
 }
