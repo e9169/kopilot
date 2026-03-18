@@ -420,6 +420,8 @@ func TestExecutionMode(t *testing.T) {
 
 // TestIsReadOnlyCommand tests the isReadOnlyCommand function
 func TestIsReadOnlyCommand(t *testing.T) {
+	const rolloutTarget = "deployment/hello-world"
+
 	tests := []struct {
 		name     string
 		args     []string
@@ -431,6 +433,9 @@ func TestIsReadOnlyCommand(t *testing.T) {
 		{"top nodes", []string{"top", "nodes"}, true},
 		{"explain", []string{"explain", "pods"}, true},
 		{"config view", []string{"config", "view"}, true},
+		{"rollout status", []string{"rollout", "status", rolloutTarget}, true},
+		{"rollout history", []string{"rollout", "history", rolloutTarget}, true},
+		{"rollout restart", []string{"rollout", "restart", rolloutTarget}, false},
 		{"scale deployment", []string{"scale", "deployment", "nginx", "--replicas=3"}, false},
 		{"delete pod", []string{"delete", "pod", "nginx"}, false},
 		{"apply", []string{"apply", "-f", "deployment.yaml"}, false},

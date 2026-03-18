@@ -492,6 +492,13 @@ type KubectlExecResult struct {
 	Error    string `json:"error,omitempty"`
 }
 
+const operationCancelledMessage = "Operation cancelled by user."
+
+func handleWriteDenied(state *agentState) {
+	state.denyWritesUntilNextPrompt = true
+	state.abortTurnIfActive()
+}
+
 func defineKubectlExecTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
 	return copilot.DefineTool(
 		toolKubectlExec,
@@ -558,22 +565,50 @@ func buildKubectlCommand(contextName string, args []string) (string, []string) {
 	return fullCommand, cmdArgs
 }
 
+func denyWriteMessage(state *agentState) any {
+	if isJSONOutput(state.outputFormat) {
+		return "write operation blocked: user declined a previous write in this prompt. Submit a new request to retry"
+	}
+	return operationCancelledMessage
+}
+
+func handleReadOnlyModeWriteBlock(state *agentState, isReadOnly bool, clusterName, contextName, fullCommand string) (bool, any, error) {
+	if isReadOnly || state.mode != ModeReadOnly {
+		return true, nil, nil
+	}
+
+	if isJSONOutput(state.outputFormat) {
+		return false, fmt.Sprintf("write operation blocked in read-only mode. Cluster: %s (%s), Command: %s",
+			clusterName, contextName, fullCommand), nil
+	}
+
+	// Offer the user a chance to switch to interactive mode rather than
+	// surfacing the block as an error (which causes the model to retry or hallucinate).
+	switched, err := offerModeSwitch(state, fullCommand)
+	if err != nil {
+		return false, nil, err
+	}
+	if !switched {
+		return false, operationCancelledMessage, nil
+	}
+
+	// Mode has been switched to interactive; caller should continue with normal confirmation flow.
+	return true, nil, nil
+}
+
 func enforceExecutionMode(state *agentState, isReadOnly bool, clusterName, contextName, fullCommand string) (bool, any, error) {
-	if !isReadOnly && state.mode == ModeReadOnly {
-		if isJSONOutput(state.outputFormat) {
-			return false, fmt.Sprintf("write operation blocked in read-only mode. Cluster: %s (%s), Command: %s",
-				clusterName, contextName, fullCommand), nil
-		}
-		// Offer the user a chance to switch to interactive mode rather than
-		// surfacing the block as an error (which causes the model to retry or hallucinate).
-		switched, err := offerModeSwitch(state, fullCommand)
+	if !isReadOnly && state.denyWritesUntilNextPrompt {
+		return false, denyWriteMessage(state), nil
+	}
+
+	if !isReadOnly {
+		canProceed, result, err := handleReadOnlyModeWriteBlock(state, isReadOnly, clusterName, contextName, fullCommand)
 		if err != nil {
 			return false, nil, err
 		}
-		if !switched {
-			return false, "Operation cancelled by user.", nil
+		if !canProceed {
+			return false, result, nil
 		}
-		// Fall through: mode is now ModeInteractive, so the block below will run.
 	}
 
 	if !isReadOnly && state.mode == ModeInteractive {
@@ -582,7 +617,7 @@ func enforceExecutionMode(state *agentState, isReadOnly bool, clusterName, conte
 			return false, nil, err
 		}
 		if !proceed {
-			return false, "Operation cancelled by user.", nil
+			return false, operationCancelledMessage, nil
 		}
 	}
 
@@ -608,6 +643,7 @@ func offerModeSwitch(state *agentState, fullCommand string) (bool, error) {
 
 	response = strings.TrimSpace(strings.ToLower(response))
 	if response != "yes" && response != "y" {
+		handleWriteDenied(state)
 		fmt.Printf("\n%s❌ Operation cancelled by user%s\n\n", colorRed, colorReset)
 		return false, nil
 	}
@@ -635,6 +671,7 @@ func confirmWriteOperation(state *agentState, fullCommand string) (bool, error) 
 
 	response = strings.TrimSpace(strings.ToLower(response))
 	if response != "yes" && response != "y" {
+		handleWriteDenied(state)
 		if !isJSONOutput(state.outputFormat) {
 			fmt.Printf("\n%s❌ Operation cancelled by user%s\n\n", colorRed, colorReset)
 		}

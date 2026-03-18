@@ -553,6 +553,43 @@ func TestEnforceExecutionModeReadOnly(t *testing.T) {
 	}
 }
 
+func TestEnforceExecutionModeDeniedWriteLatch(t *testing.T) {
+	state := &agentState{mode: ModeReadOnly, outputFormat: OutputJSON, denyWritesUntilNextPrompt: true}
+
+	proceed, result, err := enforceExecutionMode(state, false, "prod", "ctx", testCmdDeletePod)
+	if proceed || err != nil {
+		t.Fatalf("latched deny should block write without error: proceed=%v err=%v", proceed, err)
+	}
+
+	msg, ok := result.(string)
+	if !ok {
+		t.Fatalf("result should be string, got %T", result)
+	}
+	if !strings.Contains(msg, "user declined a previous write") {
+		t.Errorf("unexpected latch message: %q", msg)
+	}
+
+	proceed, _, err = enforceExecutionMode(state, true, "prod", "ctx", testCmdGetPods)
+	if !proceed || err != nil {
+		t.Errorf("latched deny should not block read-only commands: proceed=%v err=%v", proceed, err)
+	}
+}
+
+func TestHandleWriteDeniedAbortsTurn(t *testing.T) {
+	state := &agentState{}
+	aborted := false
+	state.setAbortCurrentTurn(func() { aborted = true })
+
+	handleWriteDenied(state)
+
+	if !state.denyWritesUntilNextPrompt {
+		t.Fatal("handleWriteDenied should set denyWritesUntilNextPrompt")
+	}
+	if !aborted {
+		t.Fatal("handleWriteDenied should abort active turn")
+	}
+}
+
 func TestBuildKubectlJSONResult(t *testing.T) {
 	// Success case
 	result, err := buildKubectlJSONResult("prod", "ctx", testCmdGetPods, []byte("output"), nil)

@@ -11,6 +11,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -457,6 +458,30 @@ type agentState struct {
 	selectedAgent   AgentType
 	mcpConfigPath   string
 	needsMCPReload  bool
+	// denyWritesUntilNextPrompt blocks additional write tool calls after the
+	// user declines a write confirmation. It is reset when a new prompt arrives.
+	denyWritesUntilNextPrompt bool
+	// abortCurrentTurn cancels the in-flight model response. It is set just before
+	// sending a user prompt and cleared when the turn ends.
+	abortCurrentTurn func()
+	abortMu          sync.Mutex
+}
+
+// setAbortCurrentTurn installs (or clears) the active-turn abort callback.
+func (s *agentState) setAbortCurrentTurn(fn func()) {
+	s.abortMu.Lock()
+	defer s.abortMu.Unlock()
+	s.abortCurrentTurn = fn
+}
+
+// abortTurnIfActive aborts the currently running model turn, if any.
+func (s *agentState) abortTurnIfActive() {
+	s.abortMu.Lock()
+	fn := s.abortCurrentTurn
+	s.abortMu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }
 
 // loopDeps groups the immutable runtime dependencies shared across the interactive session loop.
@@ -491,6 +516,14 @@ func isReadOnlyCommand(args []string) bool {
 	}
 
 	cmd := args[0]
+	if cmd == "rollout" {
+		if len(args) < 2 {
+			return false
+		}
+		subCmd := args[1]
+		return subCmd == "status" || subCmd == "history"
+	}
+
 	for _, readOnlyCmd := range readOnlyCommands {
 		if cmd == readOnlyCmd {
 			return true
@@ -599,6 +632,7 @@ func setupSessionEventHandler(session *copilot.Session, isIdlePtr *bool, state *
 			onSessionErrorEvent(event)
 		case "session.idle":
 			*isIdlePtr = true
+			state.setAbortCurrentTurn(nil)
 		case "assistant.usage":
 			onUsageEvent(event, state)
 		}
@@ -1325,6 +1359,9 @@ func processTurn(deps *loopDeps, rl *readline.Instance, ts *turnState) (exit boo
 		return true, nil
 	}
 
+	// A new user prompt starts a new decision cycle; allow write confirmations again.
+	deps.state.denyWritesUntilNextPrompt = false
+
 	if handleModeSwitch(input, deps.state) {
 		return false, nil
 	}
@@ -1346,6 +1383,7 @@ func processTurn(deps *loopDeps, rl *readline.Instance, ts *turnState) (exit boo
 	}
 
 	if err := sendToModel(deps, ts, input); err != nil {
+		deps.state.setAbortCurrentTurn(nil)
 		return false, err
 	}
 
@@ -1521,8 +1559,14 @@ func sendToModel(deps *loopDeps, ts *turnState, input string) error {
 		printLongRunningWarning(deps.state.selectedAgent)
 	}
 	*deps.isIdle = false
+	deps.state.setAbortCurrentTurn(func() {
+		if abortErr := ts.session.Abort(deps.ctx); abortErr != nil {
+			log.Printf("Warning: failed to abort current turn: %v", abortErr)
+		}
+	})
 	_, err := ts.session.Send(deps.ctx, copilot.MessageOptions{Prompt: input})
 	if err != nil {
+		deps.state.setAbortCurrentTurn(nil)
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 	return nil
