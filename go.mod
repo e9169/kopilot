@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/chzyer/readline v1.5.1
-	github.com/github/copilot-sdk/go v0.1.30
+	github.com/github/copilot-sdk/go v0.1.32
 	github.com/klauspost/compress v1.18.4
 	k8s.io/api v0.35.2
 	k8s.io/apimachinery v0.35.2
