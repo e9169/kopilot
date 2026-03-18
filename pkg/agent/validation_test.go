@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+const testKubeconfigFlag = "--kubeconfig"
+
 // TestValidateKubectlCommand tests kubectl command validation
 func TestValidateKubectlCommand(t *testing.T) {
 	tests := []struct {
@@ -85,7 +87,7 @@ func TestSanitizeKubectlArgs(t *testing.T) {
 		},
 		{
 			"remove kubeconfig flag",
-			[]string{"get", "pods", "--kubeconfig", "/path"},
+			[]string{"get", "pods", testKubeconfigFlag, "/path"},
 			[]string{"get", "pods"},
 		},
 		{
@@ -100,7 +102,7 @@ func TestSanitizeKubectlArgs(t *testing.T) {
 		},
 		{
 			"mixed safe and dangerous",
-			[]string{"get", "pods", "--kubeconfig", "config", "-n", "default"},
+			[]string{"get", "pods", testKubeconfigFlag, "config", "-n", "default"},
 			[]string{"get", "pods", "-n", "default"},
 		},
 	}
@@ -166,7 +168,7 @@ func BenchmarkValidateKubectlCommand(b *testing.B) {
 
 // BenchmarkSanitizeKubectlArgs benchmarks sanitization performance
 func BenchmarkSanitizeKubectlArgs(b *testing.B) {
-	args := []string{"get", "pods", "--kubeconfig", "/path", "-n", "default", "--token", "secret", "-o", "json"}
+	args := []string{"get", "pods", testKubeconfigFlag, "/path", "-n", "default", "--token", "secret", "-o", "json"}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = sanitizeKubectlArgs(args)

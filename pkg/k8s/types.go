@@ -70,3 +70,46 @@ type Provider struct {
 	cache      map[string]*CachedClusterStatus
 	cacheTTL   time.Duration
 }
+
+// SanitizeSeverity defines the severity level of a sanitize finding
+type SanitizeSeverity string
+
+const (
+	// SanitizeCritical represents a critical security issue (penalty −10)
+	SanitizeCritical SanitizeSeverity = "critical"
+	// SanitizeMajor represents a major best-practice violation (penalty −5)
+	SanitizeMajor SanitizeSeverity = "major"
+	// SanitizeMinor represents a minor best-practice violation (penalty −2)
+	SanitizeMinor SanitizeSeverity = "minor"
+)
+
+// SanitizeFinding represents a single linting finding for a workload or container
+type SanitizeFinding struct {
+	RuleID    string           `json:"rule_id"`
+	Severity  SanitizeSeverity `json:"severity"`
+	Workload  string           `json:"workload"`  // namespace/Kind/name
+	Container string           `json:"container"` // container name; empty for pod-level rules
+	Message   string           `json:"message"`
+	Penalty   int              `json:"penalty"`
+}
+
+// NamespaceSanitizeScore holds the sanitization score for a single namespace
+type NamespaceSanitizeScore struct {
+	Namespace string            `json:"namespace"`
+	Score     int               `json:"score"`
+	Grade     string            `json:"grade"`
+	Findings  []SanitizeFinding `json:"findings"`
+}
+
+// SanitizeResult holds the complete sanitization results for a cluster
+type SanitizeResult struct {
+	Context        string                   `json:"context"`
+	Score          int                      `json:"score"`
+	Grade          string                   `json:"grade"`
+	TotalWorkloads int                      `json:"total_workloads"`
+	TotalFindings  int                      `json:"total_findings"`
+	CriticalCount  int                      `json:"critical_count"`
+	MajorCount     int                      `json:"major_count"`
+	MinorCount     int                      `json:"minor_count"`
+	Namespaces     []NamespaceSanitizeScore `json:"namespaces"`
+}

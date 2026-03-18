@@ -53,7 +53,7 @@ func TestParseAgentType(t *testing.T) {
 
 func TestAllAgentNames(t *testing.T) {
 	names := allAgentNames()
-	want := []string{"default", "debugger", "security", "optimizer", "gitops"}
+	want := []string{"default", "debugger", "security", "optimizer", "gitops", "sanitizer"}
 	if len(names) != len(want) {
 		t.Fatalf("allAgentNames() returned %d names, want %d", len(names), len(want))
 	}
@@ -119,6 +119,39 @@ func TestIsExitCommand(t *testing.T) {
 	for _, s := range notExits {
 		if isExitCommand(s) {
 			t.Errorf("isExitCommand(%q) should be false", s)
+		}
+	}
+}
+
+// TestIsUnknownSlashCommand verifies that known commands are not flagged as unknown
+// and that unrecognised /commands are correctly identified.
+func TestIsUnknownSlashCommand(t *testing.T) {
+	known := []string{
+		"/help", "/mode", "/status",
+		"/readonly", "/readonly on",
+		"/interactive", "/interactive on",
+		"/agent", "/agent list", "/agent debugger",
+	}
+	for _, s := range known {
+		if isUnknownSlashCommand(s) {
+			t.Errorf("isUnknownSlashCommand(%q) should be false (known command)", s)
+		}
+	}
+
+	unknown := []string{
+		"/foo", "/delete", "/nuke", "/run", "/exec", "/FOO",
+	}
+	for _, s := range unknown {
+		if !isUnknownSlashCommand(s) {
+			t.Errorf("isUnknownSlashCommand(%q) should be true (unknown command)", s)
+		}
+	}
+
+	// Plain text and empty strings must never be flagged.
+	notSlash := []string{"", "hello", "exit", "get pods"}
+	for _, s := range notSlash {
+		if isUnknownSlashCommand(s) {
+			t.Errorf("isUnknownSlashCommand(%q) should be false (not a slash command)", s)
 		}
 	}
 }
@@ -503,20 +536,57 @@ func TestBuildKubectlCommand(t *testing.T) {
 }
 
 func TestEnforceExecutionModeReadOnly(t *testing.T) {
-	// Write op in read-only mode → blocked
-	state := &agentState{mode: ModeReadOnly, outputFormat: OutputText}
-	proceed, result, err := enforceExecutionMode(state, false, "prod", "ctx", testCmdDeletePod, "delete")
-	if proceed || result != nil || err == nil {
-		t.Errorf("write op in read-only should be blocked: proceed=%v result=%v err=%v", proceed, result, err)
+	// Write op in read-only mode (JSON output) → blocked with cancel message, no error
+	state := &agentState{mode: ModeReadOnly, outputFormat: OutputJSON}
+	proceed, result, err := enforceExecutionMode(state, false, "prod", "ctx", testCmdDeletePod)
+	if proceed || result == nil || err != nil {
+		t.Errorf("write op in read-only (JSON) should be blocked with cancel msg: proceed=%v result=%v err=%v", proceed, result, err)
 	}
-	if !strings.Contains(err.Error(), "read-only") {
-		t.Errorf("error should mention read-only, got: %s", err.Error())
+	if msg, ok := result.(string); !ok || !strings.Contains(msg, "write operation blocked") {
+		t.Errorf("cancel result should describe the block, got: %v", result)
 	}
 
 	// Read op in read-only mode → allowed
-	proceed, _, err = enforceExecutionMode(state, true, "prod", "ctx", testCmdGetPods, "get")
+	proceed, _, err = enforceExecutionMode(state, true, "prod", "ctx", testCmdGetPods)
 	if !proceed || err != nil {
 		t.Errorf("read op in read-only should be allowed: proceed=%v err=%v", proceed, err)
+	}
+}
+
+func TestEnforceExecutionModeDeniedWriteLatch(t *testing.T) {
+	state := &agentState{mode: ModeReadOnly, outputFormat: OutputJSON, denyWritesUntilNextPrompt: true}
+
+	proceed, result, err := enforceExecutionMode(state, false, "prod", "ctx", testCmdDeletePod)
+	if proceed || err != nil {
+		t.Fatalf("latched deny should block write without error: proceed=%v err=%v", proceed, err)
+	}
+
+	msg, ok := result.(string)
+	if !ok {
+		t.Fatalf("result should be string, got %T", result)
+	}
+	if !strings.Contains(msg, "user declined a previous write") {
+		t.Errorf("unexpected latch message: %q", msg)
+	}
+
+	proceed, _, err = enforceExecutionMode(state, true, "prod", "ctx", testCmdGetPods)
+	if !proceed || err != nil {
+		t.Errorf("latched deny should not block read-only commands: proceed=%v err=%v", proceed, err)
+	}
+}
+
+func TestHandleWriteDeniedAbortsTurn(t *testing.T) {
+	state := &agentState{}
+	aborted := false
+	state.setAbortCurrentTurn(func() { aborted = true })
+
+	handleWriteDenied(state)
+
+	if !state.denyWritesUntilNextPrompt {
+		t.Fatal("handleWriteDenied should set denyWritesUntilNextPrompt")
+	}
+	if !aborted {
+		t.Fatal("handleWriteDenied should abort active turn")
 	}
 }
 

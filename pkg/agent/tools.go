@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/e9169/kopilot/pkg/k8s"
 	copilot "github.com/github/copilot-sdk/go"
@@ -22,6 +24,10 @@ func defineTools(k8sProvider *k8s.Provider, state *agentState) []copilot.Tool {
 		defineCompareClustersTool(k8sProvider, state),
 		defineCheckAllClustersTool(k8sProvider, state),
 		defineKubectlExecTool(k8sProvider, state),
+		defineSanitizeClusterTool(k8sProvider, state),
+		defineMCPListServersTool(state),
+		defineMCPAddServerTool(state),
+		defineMCPDeleteServerTool(state),
 	}
 	// Ensure all tool schemas are valid for all models/APIs.
 	// Most LLM APIs (OpenAI, Anthropic, Google, etc.) require object schemas
@@ -486,6 +492,13 @@ type KubectlExecResult struct {
 	Error    string `json:"error,omitempty"`
 }
 
+const operationCancelledMessage = "Operation cancelled by user."
+
+func handleWriteDenied(state *agentState) {
+	state.denyWritesUntilNextPrompt = true
+	state.abortTurnIfActive()
+}
+
 func defineKubectlExecTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
 	return copilot.DefineTool(
 		toolKubectlExec,
@@ -510,7 +523,7 @@ func handleKubectlExec(k8sProvider *k8s.Provider, state *agentState, params Kube
 	fullCommand, cmdArgs := buildKubectlCommand(params.Context, params.Args)
 	isReadOnly := isReadOnlyCommand(params.Args)
 
-	proceed, cancelResult, err := enforceExecutionMode(state, isReadOnly, clusterName, params.Context, fullCommand, params.Args[0])
+	proceed, cancelResult, err := enforceExecutionMode(state, isReadOnly, clusterName, params.Context, fullCommand)
 	if err != nil {
 		return nil, err
 	}
@@ -552,13 +565,50 @@ func buildKubectlCommand(contextName string, args []string) (string, []string) {
 	return fullCommand, cmdArgs
 }
 
-func enforceExecutionMode(state *agentState, isReadOnly bool, clusterName, contextName, fullCommand, operation string) (bool, any, error) {
-	if !isReadOnly && state.mode == ModeReadOnly {
-		if !isJSONOutput(state.outputFormat) {
-			fmt.Printf("\n%s🔒 Blocked:%s %s%s%s\n", colorRed, colorReset, colorBold, fullCommand, colorReset)
+func denyWriteMessage(state *agentState) any {
+	if isJSONOutput(state.outputFormat) {
+		return "write operation blocked: user declined a previous write in this prompt. Submit a new request to retry"
+	}
+	return operationCancelledMessage
+}
+
+func handleReadOnlyModeWriteBlock(state *agentState, isReadOnly bool, clusterName, contextName, fullCommand string) (bool, any, error) {
+	if isReadOnly || state.mode != ModeReadOnly {
+		return true, nil, nil
+	}
+
+	if isJSONOutput(state.outputFormat) {
+		return false, fmt.Sprintf("write operation blocked in read-only mode. Cluster: %s (%s), Command: %s",
+			clusterName, contextName, fullCommand), nil
+	}
+
+	// Offer the user a chance to switch to interactive mode rather than
+	// surfacing the block as an error (which causes the model to retry or hallucinate).
+	switched, err := offerModeSwitch(state, fullCommand)
+	if err != nil {
+		return false, nil, err
+	}
+	if !switched {
+		return false, operationCancelledMessage, nil
+	}
+
+	// Mode has been switched to interactive; caller should continue with normal confirmation flow.
+	return true, nil, nil
+}
+
+func enforceExecutionMode(state *agentState, isReadOnly bool, clusterName, contextName, fullCommand string) (bool, any, error) {
+	if !isReadOnly && state.denyWritesUntilNextPrompt {
+		return false, denyWriteMessage(state), nil
+	}
+
+	if !isReadOnly {
+		canProceed, result, err := handleReadOnlyModeWriteBlock(state, isReadOnly, clusterName, contextName, fullCommand)
+		if err != nil {
+			return false, nil, err
 		}
-		return false, nil, fmt.Errorf("write operation blocked in read-only mode.\n\nCluster: %s (%s)\nCommand: %s\nOperation: %s\n\nThis command would modify cluster state. Use /interactive to enable write operations with confirmation",
-			clusterName, contextName, fullCommand, operation)
+		if !canProceed {
+			return false, result, nil
+		}
 	}
 
 	if !isReadOnly && state.mode == ModeInteractive {
@@ -567,14 +617,46 @@ func enforceExecutionMode(state *agentState, isReadOnly bool, clusterName, conte
 			return false, nil, err
 		}
 		if !proceed {
-			return false, "Operation cancelled by user", nil
+			return false, operationCancelledMessage, nil
 		}
 	}
 
 	return true, nil, nil
 }
 
+// offerModeSwitch prompts the user to switch from read-only to interactive mode
+// when a write operation is attempted. If the user agrees, state.mode is updated
+// and true is returned so the caller can proceed with the normal confirmation flow.
+func offerModeSwitch(state *agentState, fullCommand string) (bool, error) {
+	resumeSpinner := pauseSpinner()
+	defer resumeSpinner()
+
+	fmt.Printf("\n%s🔒 Blocked:%s %s%s%s\n", colorRed, colorReset, colorBold, fullCommand, colorReset)
+	fmt.Printf("%sThis write operation requires interactive mode.%s\n", colorYellow, colorReset)
+	fmt.Print("Switch to interactive mode to proceed? (yes/no): ")
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false, fmt.Errorf("failed to read confirmation: %w", err)
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response != "yes" && response != "y" {
+		handleWriteDenied(state)
+		fmt.Printf("\n%s❌ Operation cancelled by user%s\n\n", colorRed, colorReset)
+		return false, nil
+	}
+
+	state.mode = ModeInteractive
+	fmt.Printf("  %s●%s Switched to %s🔓 interactive%s mode\n\n", colorGreen, colorReset, colorGreen, colorReset)
+	return true, nil
+}
+
 func confirmWriteOperation(state *agentState, fullCommand string) (bool, error) {
+	resumeSpinner := pauseSpinner()
+	defer resumeSpinner()
+
 	if !isJSONOutput(state.outputFormat) {
 		fmt.Printf("\n%s⚠️  Write Operation:%s %s%s%s\n", colorYellow, colorReset, colorBold, fullCommand, colorReset)
 		fmt.Printf("%sThis will modify the cluster state.%s\n", colorYellow, colorReset)
@@ -589,6 +671,7 @@ func confirmWriteOperation(state *agentState, fullCommand string) (bool, error) 
 
 	response = strings.TrimSpace(strings.ToLower(response))
 	if response != "yes" && response != "y" {
+		handleWriteDenied(state)
 		if !isJSONOutput(state.outputFormat) {
 			fmt.Printf("\n%s❌ Operation cancelled by user%s\n\n", colorRed, colorReset)
 		}
@@ -606,15 +689,25 @@ func printExecutionHeader(state *agentState, isReadOnly bool, fullCommand string
 		return
 	}
 	if isReadOnly {
-		fmt.Printf("%s🔍 Executing:%s %s%s%s\n", colorCyan, colorReset, colorBold, fullCommand, colorReset)
+		fmt.Printf("\r\033[K%s🔍 Executing:%s %s%s%s\n", colorCyan, colorReset, colorBold, fullCommand, colorReset)
 	} else {
-		fmt.Printf("%s⚡ Executing:%s %s%s%s\n", colorYellow, colorReset, colorBold, fullCommand, colorReset)
+		fmt.Printf("\r\033[K%s⚡ Executing:%s %s%s%s\n", colorYellow, colorReset, colorBold, fullCommand, colorReset)
 	}
 }
 
 func runKubectlCommand(cmdArgs []string) ([]byte, error) {
-	cmd := exec.Command("kubectl", cmdArgs...)
-	return cmd.CombinedOutput()
+	kubectlPath, err := exec.LookPath("kubectl")
+	if err != nil {
+		return nil, fmt.Errorf("kubectl not found in PATH: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, kubectlPath, cmdArgs...)
+	out, execErr := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return out, fmt.Errorf("kubectl command timed out after 30s")
+	}
+	return out, execErr
 }
 
 func buildKubectlJSONResult(clusterName, contextName, fullCommand string, output []byte, execErr error) (any, error) {
@@ -656,4 +749,255 @@ func buildKubectlTextResult(clusterName, contextName, fullCommand string, output
 	}
 
 	return result.String(), nil
+}
+
+// SanitizeClusterParams defines parameters for sanitize_cluster
+type SanitizeClusterParams struct {
+	Context       string `json:"context" jsonschema:"The context name of the cluster to sanitize (from list_clusters)"`
+	Namespace     string `json:"namespace,omitempty" jsonschema:"Optional: restrict the scan to a specific namespace; leave empty to scan all non-system namespaces"`
+	IncludeSystem bool   `json:"include_system,omitempty" jsonschema:"If true, include system namespaces (kube-system, kube-public, kube-node-lease) in the scan"`
+}
+
+func defineSanitizeClusterTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
+	return copilot.DefineTool(
+		toolSanitizeCluster,
+		"Lint all Deployments, StatefulSets, and DaemonSets in a cluster against Kubernetes best practices and security rules (CIS Benchmark, NSA/CISA guidelines). Returns a 0-100 score with an A-F grade, per-namespace breakdowns, and detailed findings per workload.",
+		func(params SanitizeClusterParams, inv copilot.ToolInvocation) (any, error) {
+			ctx := context.Background()
+			report, err := k8sProvider.SanitizeCluster(ctx, params.Context, params.Namespace, params.IncludeSystem)
+			if err != nil {
+				return nil, fmt.Errorf("failed to sanitize cluster: %w", err)
+			}
+
+			if isJSONOutput(state.outputFormat) {
+				return report, nil
+			}
+
+			return formatSanitizeResult(report), nil
+		},
+	)
+}
+
+// formatSanitizeResult formats a SanitizeResult as human-readable text
+func formatSanitizeResult(report *k8s.SanitizeResult) string {
+	var sb strings.Builder
+
+	icon := sanitizeGradeIcon(report.Grade)
+	fmt.Fprintf(&sb, "Cluster Sanitize Report: %s\n", report.Context)
+	sb.WriteString(strings.Repeat("=", 80) + "\n\n")
+	fmt.Fprintf(&sb, "%s CLUSTER GRADE: %s  (score %d/100)\n", icon, report.Grade, report.Score)
+	fmt.Fprintf(&sb, "   Scanned %d workload(s)  |  %d finding(s): %d critical, %d major, %d minor\n\n",
+		report.TotalWorkloads, report.TotalFindings, report.CriticalCount, report.MajorCount, report.MinorCount)
+
+	for _, ns := range report.Namespaces {
+		nsIcon := sanitizeGradeIcon(ns.Grade)
+		fmt.Fprintf(&sb, "%s namespace/%s  grade %s  score %d/100\n",
+			nsIcon, ns.Namespace, ns.Grade, ns.Score)
+
+		// Group findings by workload and sort worst-first
+		byWorkload := groupFindingsByWorkload(ns.Findings)
+		workloads := sortedWorkloadKeysByScore(byWorkload)
+		for _, wl := range workloads {
+			wf := byWorkload[wl]
+			wScore := workloadScore(wf)
+			wIcon := sanitizeScoreIcon(wScore)
+			fmt.Fprintf(&sb, "  %s %s  score %d/100  (%d finding(s))\n",
+				wIcon, stripNamespaceFromWorkload(wl), wScore, len(wf))
+			writeSanitizeFindingGroup(&sb, "CRITICAL", filterSanitizeFindings(wf, k8s.SanitizeCritical))
+			writeSanitizeFindingGroup(&sb, "MAJOR", filterSanitizeFindings(wf, k8s.SanitizeMajor))
+			writeSanitizeFindingGroup(&sb, "MINOR", filterSanitizeFindings(wf, k8s.SanitizeMinor))
+		}
+		sb.WriteString("\n")
+	}
+
+	if report.TotalFindings == 0 {
+		sb.WriteString("✅ No findings — all scanned workloads pass best-practice checks.\n")
+	}
+	return sb.String()
+}
+
+// sanitizeGradeIcon returns an emoji for a letter grade
+func sanitizeGradeIcon(grade string) string {
+	switch grade {
+	case "A":
+		return "🟢"
+	case "B":
+		return "🟡"
+	case "C":
+		return "🟠"
+	case "D":
+		return "🔴"
+	default:
+		return "💀"
+	}
+}
+
+// sanitizeScoreIcon returns an emoji based on a raw score.
+// ✅ is reserved for a perfect 100 (zero findings); anything less uses the grade icon.
+func sanitizeScoreIcon(score int) string {
+	if score == 100 {
+		return "✅"
+	}
+	return sanitizeGradeIcon(workloadGrade(score))
+}
+
+// filterSanitizeFindings returns findings matching the given severity
+func filterSanitizeFindings(findings []k8s.SanitizeFinding, sev k8s.SanitizeSeverity) []k8s.SanitizeFinding {
+	out := make([]k8s.SanitizeFinding, 0)
+	for _, f := range findings {
+		if f.Severity == sev {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// groupFindingsByWorkload groups findings by their Workload ID
+func groupFindingsByWorkload(findings []k8s.SanitizeFinding) map[string][]k8s.SanitizeFinding {
+	m := make(map[string][]k8s.SanitizeFinding)
+	for _, f := range findings {
+		m[f.Workload] = append(m[f.Workload], f)
+	}
+	return m
+}
+
+// sortedWorkloadKeysByScore returns workload IDs sorted by score ascending (worst first), then alphabetically
+func sortedWorkloadKeysByScore(m map[string][]k8s.SanitizeFinding) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		si := workloadScore(m[keys[i]])
+		sj := workloadScore(m[keys[j]])
+		if si != sj {
+			return si < sj
+		}
+		return keys[i] < keys[j]
+	})
+	return keys
+}
+
+// workloadScore computes a 0-100 score from a workload's findings
+func workloadScore(findings []k8s.SanitizeFinding) int {
+	penalty := 0
+	for _, f := range findings {
+		penalty += f.Penalty
+	}
+	if penalty > 100 {
+		return 0
+	}
+	return 100 - penalty
+}
+
+// workloadGrade returns a letter grade for a 0-100 score
+func workloadGrade(score int) string {
+	switch {
+	case score >= 90:
+		return "A"
+	case score >= 75:
+		return "B"
+	case score >= 60:
+		return "C"
+	case score >= 40:
+		return "D"
+	default:
+		return "F"
+	}
+}
+
+// stripNamespaceFromWorkload converts "namespace/Kind/name" to "Kind/name"
+func stripNamespaceFromWorkload(workload string) string {
+	if idx := strings.Index(workload, "/"); idx >= 0 {
+		return workload[idx+1:]
+	}
+	return workload
+}
+
+// writeSanitizeFindingGroup writes a labelled group of findings (workload already shown by caller)
+func writeSanitizeFindingGroup(sb *strings.Builder, label string, findings []k8s.SanitizeFinding) {
+	for _, f := range findings {
+		containerPart := ""
+		if f.Container != "" {
+			containerPart = fmt.Sprintf(" [%s]", f.Container)
+		}
+		fmt.Fprintf(sb, "    [%s] %s%s: %s\n", label, f.RuleID, containerPart, f.Message)
+	}
+}
+
+// ── MCP server management tools ─────────────────────────────────────────────
+
+// MCPListServersParams defines no parameters for mcp_list_servers
+type MCPListServersParams struct{}
+
+// MCPListServersResult defines the output for mcp_list_servers
+type MCPListServersResult struct {
+	Servers []MCPServerConfig `json:"servers"`
+}
+
+func defineMCPListServersTool(state *agentState) copilot.Tool {
+	return copilot.DefineTool(
+		toolMCPListServers,
+		"List all currently configured MCP (Model Context Protocol) servers",
+		func(_ MCPListServersParams, _ copilot.ToolInvocation) (any, error) {
+			servers, err := listMCPServers(state.mcpConfigPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to list MCP servers: %w", err)
+			}
+			if isJSONOutput(state.outputFormat) {
+				return MCPListServersResult{Servers: servers}, nil
+			}
+			if len(servers) == 0 {
+				return "No MCP servers configured. Use /mcp add <name> <url> or ask me to add one.", nil
+			}
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "Configured MCP servers (%d):\n\n", len(servers))
+			for i, s := range servers {
+				fmt.Fprintf(&sb, "  [%d] %s\n", i+1, s.Name)
+				fmt.Fprintf(&sb, "      Type: %s\n", s.Type)
+				fmt.Fprintf(&sb, "      URL:  %s\n", s.URL)
+			}
+			return sb.String(), nil
+		},
+	)
+}
+
+// MCPAddServerParams defines parameters for mcp_add_server
+type MCPAddServerParams struct {
+	Name string `json:"name" jsonschema:"Unique identifier for the MCP server (alphanumeric, hyphens, underscores)"`
+	URL  string `json:"url"  jsonschema:"HTTP(S) endpoint URL of the MCP server"`
+}
+
+func defineMCPAddServerTool(state *agentState) copilot.Tool {
+	return copilot.DefineTool(
+		toolMCPAddServer,
+		"Add or update an MCP (Model Context Protocol) server. The new server is persisted to the config file and will be active from the next session.",
+		func(params MCPAddServerParams, _ copilot.ToolInvocation) (any, error) {
+			entry := MCPServerConfig{Name: params.Name, Type: mcpHTTPType, URL: params.URL}
+			if err := addMCPServer(state.mcpConfigPath, entry); err != nil {
+				return nil, fmt.Errorf("failed to add MCP server: %w", err)
+			}
+			state.needsMCPReload = true
+			return fmt.Sprintf("MCP server %q added (%s). The session will reload to connect to it.", params.Name, params.URL), nil
+		},
+	)
+}
+
+// MCPDeleteServerParams defines parameters for mcp_delete_server
+type MCPDeleteServerParams struct {
+	Name string `json:"name" jsonschema:"Name of the MCP server to remove"`
+}
+
+func defineMCPDeleteServerTool(state *agentState) copilot.Tool {
+	return copilot.DefineTool(
+		toolMCPDeleteServer,
+		"Remove a configured MCP (Model Context Protocol) server by name",
+		func(params MCPDeleteServerParams, _ copilot.ToolInvocation) (any, error) {
+			if err := deleteMCPServer(state.mcpConfigPath, params.Name); err != nil {
+				return nil, fmt.Errorf("failed to delete MCP server: %w", err)
+			}
+			state.needsMCPReload = true
+			return fmt.Sprintf("MCP server %q removed. The session will reload.", params.Name), nil
+		},
+	)
 }
