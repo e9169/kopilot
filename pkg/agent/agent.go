@@ -712,8 +712,8 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 		return err
 	}
 	defer func() {
-		if destroyErr := session.Destroy(); destroyErr != nil {
-			log.Printf("Warning: failed to destroy session: %v", destroyErr)
+		if disconnectErr := session.Disconnect(); disconnectErr != nil {
+			log.Printf("Warning: failed to disconnect session: %v", disconnectErr)
 		}
 	}()
 
@@ -1315,8 +1315,8 @@ func resolveSwitchTarget(name string, state *agentState) (bool, AgentType, error
 // switchToModel replaces the current session with a new one using the given model.
 // All runtime dependencies are supplied via deps.
 func switchToModel(deps *loopDeps, oldSession *copilot.Session, newModel string) (*copilot.Session, error) {
-	if err := oldSession.Destroy(); err != nil {
-		log.Printf("Warning: failed to destroy old session: %v", err)
+	if err := oldSession.Disconnect(); err != nil {
+		log.Printf("Warning: failed to disconnect old session: %v", err)
 	}
 
 	newSession, err := createSessionWithModel(deps.ctx, deps.client, deps.k8sProvider, deps.state, newModel)
