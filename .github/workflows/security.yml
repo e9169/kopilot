@@ -38,6 +38,7 @@ jobs:
         uses: golang/govulncheck-action@v1
         with:
           go-version-file: go.mod
+          go-version-input: '1.26'
           go-package: ./...
 
   sbom:
