@@ -6,9 +6,9 @@ require (
 	github.com/chzyer/readline v1.5.1
 	github.com/github/copilot-sdk/go v0.2.0
 	github.com/klauspost/compress v1.18.5
-	k8s.io/api v0.35.3
-	k8s.io/apimachinery v0.35.3
-	k8s.io/client-go v0.35.3
+	k8s.io/api v0.35.4
+	k8s.io/apimachinery v0.35.4
+	k8s.io/client-go v0.35.4
 )
 
 require (
