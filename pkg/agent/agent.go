@@ -474,7 +474,7 @@ type agentState struct {
 	abortMu          sync.Mutex
 	// responseMu guards lastResponseText which is written from the event-handler
 	// goroutine and read from the main REPL loop.
-	responseMu       sync.RWMutex
+	responseMu sync.RWMutex
 	// UX enhancements
 	forcedModel        string    // /model override; empty = auto-routing
 	streamerMode       bool      // /streamer: hide quota badge in prompt
@@ -1801,14 +1801,22 @@ func copyToClipboard(text string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("pbcopy") // #nosec G204
+		pbcopyPath, err := exec.LookPath("pbcopy")
+		if err != nil {
+			return fmt.Errorf("pbcopy not found: %w", err)
+		}
+		cmd = exec.Command(pbcopyPath) // #nosec G204
 	case "windows":
-		cmd = exec.Command("clip") // #nosec G204
+		clipPath, err := exec.LookPath("clip")
+		if err != nil {
+			return fmt.Errorf("clip not found: %w", err)
+		}
+		cmd = exec.Command(clipPath) // #nosec G204
 	default:
-		if _, err := exec.LookPath("xclip"); err == nil {
-			cmd = exec.Command("xclip", "-sel", "clip") // #nosec G204
-		} else if _, err := exec.LookPath("xsel"); err == nil {
-			cmd = exec.Command("xsel", "--clipboard", "--input") // #nosec G204
+		if xclipPath, err := exec.LookPath("xclip"); err == nil {
+			cmd = exec.Command(xclipPath, "-sel", "clip") // #nosec G204
+		} else if xselPath, err := exec.LookPath("xsel"); err == nil {
+			cmd = exec.Command(xselPath, "--clipboard", "--input") // #nosec G204
 		} else {
 			return fmt.Errorf("no clipboard utility found (install xclip or xsel)")
 		}
@@ -1827,9 +1835,14 @@ func handleShellPassthrough(cmdStr string) {
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd.exe", "/C", cmdStr) // #nosec G204
+		cmdExePath, err := exec.LookPath("cmd.exe")
+		if err != nil {
+			fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
+			return
+		}
+		cmd = exec.Command(cmdExePath, "/C", cmdStr) // #nosec G204
 	} else {
-		cmd = exec.Command("sh", "-c", cmdStr) // #nosec G204
+		cmd = exec.Command("/bin/sh", "-c", cmdStr) // #nosec G204
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
