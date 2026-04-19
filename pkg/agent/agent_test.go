@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -764,5 +765,467 @@ func TestLastResponseMutex(t *testing.T) {
 	<-done
 	if got := state.getLastResponse(); got != value {
 		t.Errorf("getLastResponse() = %q, want %q", got, value)
+	}
+}
+
+// TestFormatBytes exercises all three branches: bytes, KB, and MB.
+func TestFormatBytes(t *testing.T) {
+	tests := []struct {
+		input int64
+		want  string
+	}{
+		{0, "0 B"},
+		{512, "512 B"},
+		{1023, "1023 B"},
+		{1024, "1.0 KB"},
+		{1536, "1.5 KB"},
+		{1024 * 1024, "1.0 MB"},
+		{1024*1024*2 + 1024*512, "2.5 MB"},
+	}
+	for _, tt := range tests {
+		got := formatBytes(tt.input)
+		if got != tt.want {
+			t.Errorf("formatBytes(%d) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+// TestEstimateTokens verifies the rough token count heuristic (1 token ≈ 4 chars).
+func TestEstimateTokens(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int
+	}{
+		{"", 0},
+		{"abcd", 1},
+		{"abcdefgh", 2},
+		{"hello world!", 3},
+	}
+	for _, tt := range tests {
+		got := estimateTokens(tt.input)
+		if got != tt.want {
+			t.Errorf("estimateTokens(%q) = %d, want %d", tt.input, got, tt.want)
+		}
+	}
+}
+
+// TestHandleLastEmpty verifies /last with no previous response.
+func TestHandleLastEmpty(t *testing.T) {
+	state := &agentState{}
+	handled, err := handleLast(state)
+	if err != nil {
+		t.Fatalf("handleLast returned unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("handleLast should return handled=true")
+	}
+}
+
+// TestHandleLastWithContent verifies /last prints the stored response.
+func TestHandleLastWithContent(t *testing.T) {
+	state := &agentState{}
+	state.setLastResponse("some assistant response")
+	handled, err := handleLast(state)
+	if err != nil {
+		t.Fatalf("handleLast returned unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("handleLast should return handled=true")
+	}
+}
+
+// TestHandleCopyEmpty verifies /copy when there is nothing in the buffer.
+func TestHandleCopyEmpty(t *testing.T) {
+	state := &agentState{}
+	handled, err := handleCopy(state)
+	if err != nil {
+		t.Fatalf("handleCopy returned unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("handleCopy should return handled=true")
+	}
+}
+
+// TestHandleCopyWithContent verifies /copy when the buffer has content.
+// copyToClipboard may succeed (macOS) or fail (CI without xclip/xsel) — either
+// branch provides coverage; only the "nothing to copy" early-return is omitted.
+func TestHandleCopyWithContent(t *testing.T) {
+	state := &agentState{}
+	state.setLastResponse("response to copy")
+	handled, err := handleCopy(state)
+	if err != nil {
+		t.Fatalf("handleCopy returned unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("handleCopy should return handled=true")
+	}
+}
+
+// TestHandleStreamerToggle verifies that /streamer without arguments toggles the flag.
+func TestHandleStreamerToggle(t *testing.T) {
+	state := &agentState{streamerMode: false}
+
+	handled, err := handleStreamer(state, "/streamer")
+	if err != nil || !handled {
+		t.Fatalf("handleStreamer toggle: handled=%v err=%v", handled, err)
+	}
+	if !state.streamerMode {
+		t.Error("expected streamerMode=true after first toggle")
+	}
+
+	handled, err = handleStreamer(state, "/streamer")
+	if err != nil || !handled {
+		t.Fatalf("handleStreamer toggle back: handled=%v err=%v", handled, err)
+	}
+	if state.streamerMode {
+		t.Error("expected streamerMode=false after second toggle")
+	}
+}
+
+// TestHandleStreamerExplicit verifies /streamer on and /streamer off.
+func TestHandleStreamerExplicit(t *testing.T) {
+	state := &agentState{}
+
+	if _, err := handleStreamer(state, "/streamer on"); err != nil {
+		t.Fatal(err)
+	}
+	if !state.streamerMode {
+		t.Error("expected streamerMode=true after '/streamer on'")
+	}
+
+	if _, err := handleStreamer(state, "/streamer off"); err != nil {
+		t.Fatal(err)
+	}
+	if state.streamerMode {
+		t.Error("expected streamerMode=false after '/streamer off'")
+	}
+}
+
+// TestHandleStreamerInvalid verifies that an unknown argument is rejected gracefully.
+func TestHandleStreamerInvalid(t *testing.T) {
+	state := &agentState{}
+	handled, err := handleStreamer(state, "/streamer maybe")
+	if err != nil {
+		t.Fatalf("handleStreamer invalid arg returned error: %v", err)
+	}
+	if !handled {
+		t.Error("handleStreamer should return handled=true even for invalid arg")
+	}
+}
+
+// TestHandleModelCommandNoArgs verifies /model with no arguments prints status.
+func TestHandleModelCommandNoArgs(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{},
+		isIdle:      &idle,
+	}
+	ts := &turnState{model: modelCostEffective}
+
+	handled, err := handleModelCommand(deps, "/model", ts)
+	if err != nil {
+		t.Fatalf("handleModelCommand(/model) returned error: %v", err)
+	}
+	if !handled {
+		t.Error("handleModelCommand(/model) should return handled=true")
+	}
+}
+
+// TestHandleModelCommandNoArgsWithForced verifies /model displays forced model info.
+func TestHandleModelCommandNoArgsWithForced(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{forcedModel: "gpt-4o"},
+		isIdle:      &idle,
+	}
+	ts := &turnState{model: "gpt-4o"}
+
+	handled, err := handleModelCommand(deps, "/model", ts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("should be handled")
+	}
+}
+
+// TestHandleModelCommandReset verifies /model reset clears the forced model.
+func TestHandleModelCommandReset(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{forcedModel: "gpt-4o"},
+		isIdle:      &idle,
+	}
+	ts := &turnState{model: "gpt-4o"}
+
+	handled, err := handleModelCommand(deps, "/model reset", ts)
+	if err != nil {
+		t.Fatalf("handleModelCommand(/model reset) returned error: %v", err)
+	}
+	if !handled {
+		t.Error("handleModelCommand(/model reset) should return handled=true")
+	}
+	if deps.state.forcedModel != "" {
+		t.Errorf("forcedModel should be cleared, got %q", deps.state.forcedModel)
+	}
+}
+
+// TestHandleContextCommandList verifies /context list via the mock provider.
+func TestHandleContextCommandList(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{},
+		isIdle:      &idle,
+	}
+
+	for _, input := range []string{"/context", "/context list", "/context LIST"} {
+		handled, err := handleContextCommand(deps, input)
+		if err != nil {
+			t.Fatalf("handleContextCommand(%q) returned error: %v", input, err)
+		}
+		if !handled {
+			t.Errorf("handleContextCommand(%q) should return handled=true", input)
+		}
+	}
+}
+
+// TestHandleContextCommandUse verifies /context use <name> switches the active context.
+func TestHandleContextCommandUse(t *testing.T) {
+	provider := createMockProvider(t)
+	clusters := provider.GetClusters()
+	if len(clusters) == 0 {
+		t.Skip("no clusters in mock provider")
+	}
+	targetCtx := clusters[0].Context
+
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{},
+		isIdle:      &idle,
+	}
+
+	handled, err := handleContextCommand(deps, "/context use "+targetCtx)
+	if err != nil {
+		t.Fatalf("handleContextCommand(/context use ...) returned error: %v", err)
+	}
+	if !handled {
+		t.Error("should return handled=true")
+	}
+	if provider.GetCurrentContext() != targetCtx {
+		t.Errorf("current context = %q, want %q", provider.GetCurrentContext(), targetCtx)
+	}
+}
+
+// TestHandleContextCommandInvalid verifies /context with bad syntax is gracefully rejected.
+func TestHandleContextCommandInvalid(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{},
+		isIdle:      &idle,
+	}
+
+	handled, err := handleContextCommand(deps, "/context badcmd")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("should return handled=true")
+	}
+}
+
+// TestPrintUsage exercises printUsage under several quota conditions.
+func TestPrintUsage(t *testing.T) {
+	tests := []struct {
+		name  string
+		state *agentState
+	}{
+		{
+			name: "unlimited quota",
+			state: &agentState{
+				sessionStart:   time.Now().Add(-90 * time.Second),
+				quotaUnlimited: true,
+				turnCount:      5,
+				turnsMiniCount: 3,
+				turnsGPT4Count: 2,
+			},
+		},
+		{
+			name: "limited quota",
+			state: &agentState{
+				sessionStart:       time.Now().Add(-2 * time.Minute),
+				quotaUnlimited:     false,
+				quotaTotal:         100,
+				quotaUsed:          40,
+				premiumUsedAtStart: 30,
+				quotaPercentage:    60,
+				turnCount:          3,
+			},
+		},
+		{
+			name: "hours elapsed",
+			state: &agentState{
+				sessionStart:   time.Now().Add(-70 * time.Minute),
+				quotaUnlimited: true,
+				forcedModel:    "gpt-4o",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// printUsage writes to stdout; we just ensure it doesn't panic.
+			printUsage(tt.state)
+		})
+	}
+}
+
+// TestDispatchUXCommandLast verifies /last is routed and handled.
+func TestDispatchUXCommandLast(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	state := &agentState{}
+	state.setLastResponse("response text")
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       state,
+		isIdle:      &idle,
+	}
+	ts := &turnState{model: modelCostEffective}
+
+	handled, err := dispatchUXCommand(deps, "/last", ts)
+	if err != nil || !handled {
+		t.Errorf("dispatchUXCommand(/last): handled=%v err=%v", handled, err)
+	}
+}
+
+// TestDispatchUXCommandUsage verifies /usage is routed and handled.
+func TestDispatchUXCommandUsage(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{sessionStart: time.Now(), quotaUnlimited: true},
+		isIdle:      &idle,
+	}
+	ts := &turnState{}
+
+	handled, err := dispatchUXCommand(deps, "/usage", ts)
+	if err != nil || !handled {
+		t.Errorf("dispatchUXCommand(/usage): handled=%v err=%v", handled, err)
+	}
+}
+
+// TestDispatchUXCommandStreamer verifies /streamer is dispatched.
+func TestDispatchUXCommandStreamer(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{},
+		isIdle:      &idle,
+	}
+	ts := &turnState{}
+
+	for _, cmd := range []string{"/streamer", "/streamer on", "/streamer off"} {
+		handled, err := dispatchUXCommand(deps, cmd, ts)
+		if err != nil || !handled {
+			t.Errorf("dispatchUXCommand(%q): handled=%v err=%v", cmd, handled, err)
+		}
+	}
+}
+
+// TestDispatchUXCommandCopy verifies /copy is dispatched (empty buffer case).
+func TestDispatchUXCommandCopy(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{},
+		isIdle:      &idle,
+	}
+	ts := &turnState{}
+
+	handled, err := dispatchUXCommand(deps, "/copy", ts)
+	if err != nil || !handled {
+		t.Errorf("dispatchUXCommand(/copy): handled=%v err=%v", handled, err)
+	}
+}
+
+// TestDispatchUXCommandModel verifies /model and /model reset are dispatched.
+func TestDispatchUXCommandModel(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{forcedModel: "gpt-4o"},
+		isIdle:      &idle,
+	}
+	ts := &turnState{model: "gpt-4o"}
+
+	for _, cmd := range []string{"/model", "/model reset"} {
+		handled, err := dispatchUXCommand(deps, cmd, ts)
+		if err != nil || !handled {
+			t.Errorf("dispatchUXCommand(%q): handled=%v err=%v", cmd, handled, err)
+		}
+	}
+}
+
+// TestDispatchUXCommandContext verifies /context list is dispatched.
+func TestDispatchUXCommandContext(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{},
+		isIdle:      &idle,
+	}
+	ts := &turnState{}
+
+	handled, err := dispatchUXCommand(deps, "/context list", ts)
+	if err != nil || !handled {
+		t.Errorf("dispatchUXCommand(/context list): handled=%v err=%v", handled, err)
+	}
+}
+
+// TestDispatchUXCommandUnknown verifies that unknown commands return handled=false.
+func TestDispatchUXCommandUnknown(t *testing.T) {
+	provider := createMockProvider(t)
+	idle := true
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		k8sProvider: provider,
+		state:       &agentState{},
+		isIdle:      &idle,
+	}
+	ts := &turnState{}
+
+	handled, err := dispatchUXCommand(deps, "/unknown", ts)
+	if err != nil {
+		t.Fatalf("unexpected error for unknown command: %v", err)
+	}
+	if handled {
+		t.Error("dispatchUXCommand should return handled=false for unknown commands")
 	}
 }
