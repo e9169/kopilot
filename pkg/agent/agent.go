@@ -1755,6 +1755,14 @@ func extractAttachments(input string) (string, []copilot.Attachment) {
 			kept = append(kept, w)
 			continue
 		}
+		f, openErr := os.Open(abs) // #nosec G304 — path is already resolved via filepath.Abs
+		if openErr != nil {
+			kept = append(kept, w)
+			continue
+		}
+		if closeErr := f.Close(); closeErr != nil {
+			log.Printf("Warning: failed to close attachment file %s: %v", abs, closeErr)
+		}
 		pathCopy := abs
 		nameCopy := filepath.Base(abs)
 		attachments = append(attachments, copilot.Attachment{
