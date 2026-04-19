@@ -472,6 +472,9 @@ type agentState struct {
 	// sending a user prompt and cleared when the turn ends.
 	abortCurrentTurn func()
 	abortMu          sync.Mutex
+	// responseMu guards lastResponseText which is written from the event-handler
+	// goroutine and read from the main REPL loop.
+	responseMu       sync.RWMutex
 	// UX enhancements
 	forcedModel        string    // /model override; empty = auto-routing
 	streamerMode       bool      // /streamer: hide quota badge in prompt
@@ -480,7 +483,7 @@ type agentState struct {
 	turnsMiniCount     int       // turns sent to cost-effective model
 	turnsGPT4Count     int       // turns sent to premium model
 	premiumUsedAtStart float64   // quotaUsed at session start (delta for /usage)
-	lastResponseText   string    // for /copy, /last, and truncation
+	lastResponseText   string    // for /copy, /last, and truncation; guarded by responseMu
 }
 
 // setAbortCurrentTurn installs (or clears) the active-turn abort callback.
@@ -498,6 +501,20 @@ func (s *agentState) abortTurnIfActive() {
 	if fn != nil {
 		fn()
 	}
+}
+
+// setLastResponse stores the last assistant response text in a thread-safe manner.
+func (s *agentState) setLastResponse(text string) {
+	s.responseMu.Lock()
+	defer s.responseMu.Unlock()
+	s.lastResponseText = text
+}
+
+// getLastResponse returns the last assistant response text in a thread-safe manner.
+func (s *agentState) getLastResponse() string {
+	s.responseMu.RLock()
+	defer s.responseMu.RUnlock()
+	return s.lastResponseText
 }
 
 // loopDeps groups the immutable runtime dependencies shared across the interactive session loop.
@@ -606,7 +623,7 @@ func onMessageEvent(event copilot.SessionEvent, state *agentState) {
 		fmt.Println()
 		spinnerPaused.Store(0)
 		if event.Data.Content != nil {
-			state.lastResponseText = *event.Data.Content
+			state.setLastResponse(*event.Data.Content)
 		}
 		return
 	}
@@ -614,7 +631,7 @@ func onMessageEvent(event copilot.SessionEvent, state *agentState) {
 		return
 	}
 	content := *event.Data.Content
-	state.lastResponseText = content
+	state.setLastResponse(content)
 	fmt.Println()
 	lines := strings.Split(content, "\n")
 	if len(lines) > maxDisplayLines {
@@ -1163,16 +1180,21 @@ func rlPromptString(state *agentState) string {
 }
 
 // newReadlineInstance creates a readline instance with persistent cross-session history.
+// If historyFilePath() returns an empty string (e.g., no home dir), history persistence
+// is simply disabled rather than failing to start the REPL.
 func newReadlineInstance() (*readline.Instance, error) {
-	return readline.NewEx(&readline.Config{
-		HistoryFile:            historyFilePath(),
+	cfg := &readline.Config{
 		HistoryLimit:           500,
 		InterruptPrompt:        "^C",
 		EOFPrompt:              "exit",
 		HistorySearchFold:      true,
 		DisableAutoSaveHistory: false,
 		Painter:                &cyanPainter{},
-	})
+	}
+	if hp := historyFilePath(); hp != "" {
+		cfg.HistoryFile = hp
+	}
+	return readline.NewEx(cfg)
 }
 
 // readUserInput reads and trims user input via the readline instance.
@@ -1902,7 +1924,7 @@ func handleCompact(deps *loopDeps, ts *turnState) error {
 		return fmt.Errorf("failed to send compact prompt: %w", err)
 	}
 	waitForIdleWithSpinner(deps.isIdle)
-	summary := deps.state.lastResponseText
+	summary := deps.state.getLastResponse()
 	prevTurns := deps.state.turnCount
 	newSession, err := switchToModel(deps, ts.session, ts.model)
 	if err != nil {
@@ -1999,27 +2021,29 @@ func handleContextCommand(deps *loopDeps, input string) (bool, error) {
 
 // handleLast prints the last assistant response to stdout.
 func handleLast(state *agentState) (bool, error) {
-	if state.lastResponseText == "" {
+	last := state.getLastResponse()
+	if last == "" {
 		fmt.Printf("  %s●%s No previous response to show\n", colorDim, colorReset)
 	} else {
 		fmt.Println()
-		fmt.Println(state.lastResponseText)
+		fmt.Println(last)
 	}
 	return true, nil
 }
 
 // handleCopy copies the last assistant response to the system clipboard.
 func handleCopy(state *agentState) (bool, error) {
-	if state.lastResponseText == "" {
+	last := state.getLastResponse()
+	if last == "" {
 		fmt.Printf("  %s●%s Nothing to copy yet\n", colorDim, colorReset)
 		return true, nil
 	}
-	if err := copyToClipboard(state.lastResponseText); err != nil {
+	if err := copyToClipboard(last); err != nil {
 		fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
 		return true, nil
 	}
 	fmt.Printf("  %s●%s Copied to clipboard (%d characters)\n",
-		colorGreen, colorReset, len(state.lastResponseText))
+		colorGreen, colorReset, len(last))
 	return true, nil
 }
 

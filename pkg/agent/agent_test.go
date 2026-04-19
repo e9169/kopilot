@@ -613,3 +613,156 @@ func TestSanitizerAgentDefinition(t *testing.T) {
 		t.Error("AgentSanitizer should have at least one example")
 	}
 }
+
+// TestExtractAttachments exercises the @<filepath> parsing logic.
+func TestExtractAttachments(t *testing.T) {
+	// Create a temporary regular file we can read.
+	tmpDir := t.TempDir()
+	regularFile := filepath.Join(tmpDir, "hello.txt")
+	if err := os.WriteFile(regularFile, []byte("hello"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a subdirectory (not a regular file).
+	subDir := filepath.Join(tmpDir, "subdir")
+	if err := os.Mkdir(subDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name            string
+		input           string
+		wantPrompt      string
+		wantAttachCount int
+	}{
+		{
+			name:            "no @ tokens",
+			input:           "show me all pods",
+			wantPrompt:      "show me all pods",
+			wantAttachCount: 0,
+		},
+		{
+			name:            "bare @ with no path",
+			input:           "@ show pods",
+			wantPrompt:      "@ show pods",
+			wantAttachCount: 0,
+		},
+		{
+			name:            "non-existent path",
+			input:           "@/no/such/file.txt check it",
+			wantPrompt:      "@/no/such/file.txt check it",
+			wantAttachCount: 0,
+		},
+		{
+			name:            "directory path (not regular file)",
+			input:           "analyse @" + subDir,
+			wantPrompt:      "analyse @" + subDir,
+			wantAttachCount: 0,
+		},
+		{
+			name:            "valid regular file",
+			input:           "read @" + regularFile,
+			wantPrompt:      "read",
+			wantAttachCount: 1,
+		},
+		{
+			name:            "mixed tokens: one valid, one missing",
+			input:           "@" + regularFile + " and @/gone.txt",
+			wantPrompt:      "and @/gone.txt",
+			wantAttachCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotPrompt, gotAttach := extractAttachments(tt.input)
+			if gotPrompt != tt.wantPrompt {
+				t.Errorf("prompt = %q, want %q", gotPrompt, tt.wantPrompt)
+			}
+			if len(gotAttach) != tt.wantAttachCount {
+				t.Errorf("attachments count = %d, want %d", len(gotAttach), tt.wantAttachCount)
+			}
+		})
+	}
+}
+
+// TestExtractAttachmentsUnreadable verifies that files that exist but are not
+// readable by the current process are not promoted to attachments.
+func TestExtractAttachmentsUnreadable(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can read any file — skipping unreadable-file test")
+	}
+	tmpDir := t.TempDir()
+	unreadable := filepath.Join(tmpDir, "secret.txt")
+	if err := os.WriteFile(unreadable, []byte("secret"), 0000); err != nil {
+		t.Fatal(err)
+	}
+	prompt, attachments := extractAttachments("read @" + unreadable)
+	if len(attachments) != 0 {
+		t.Errorf("expected 0 attachments for unreadable file, got %d", len(attachments))
+	}
+	if !strings.Contains(prompt, "@"+unreadable) {
+		t.Errorf("unreadable token should be preserved in prompt, got %q", prompt)
+	}
+}
+
+// TestHistoryFilePath verifies that historyFilePath returns a non-empty path
+// when a home directory is available.
+func TestHistoryFilePath(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory available — skipping historyFilePath test")
+	}
+	path := historyFilePath()
+	if path == "" {
+		t.Fatal("historyFilePath() returned empty string when home dir is available")
+	}
+	want := filepath.Join(home, ".kopilot", "history")
+	if path != want {
+		t.Errorf("historyFilePath() = %q, want %q", path, want)
+	}
+	// The directory should have been created.
+	if _, statErr := os.Stat(filepath.Dir(path)); statErr != nil {
+		t.Errorf("historyFilePath() directory not created: %v", statErr)
+	}
+}
+
+// TestSelectModelForcedOverride verifies that a non-empty forcedModel bypasses
+// all keyword-based and agent-type-based routing.
+func TestSelectModelForcedOverride(t *testing.T) {
+	const customModel = "my-custom-model"
+	tests := []struct {
+		name      string
+		query     string
+		agentType AgentType
+	}{
+		{"simple query with forced model", "list pods", AgentDefault},
+		{"complex query with forced model", "troubleshoot crash", AgentDefault},
+		{"specialist agent with forced model", "list pods", AgentDebugger},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := selectModelForQuery(tt.query, tt.agentType, customModel)
+			if got != customModel {
+				t.Errorf("selectModelForQuery(%q, %q, %q) = %q, want %q",
+					tt.query, tt.agentType, customModel, got, customModel)
+			}
+		})
+	}
+}
+
+// TestLastResponseMutex verifies that setLastResponse / getLastResponse work
+// correctly under concurrent access (data-race detection).
+func TestLastResponseMutex(t *testing.T) {
+	state := &agentState{}
+	const value = "hello from goroutine"
+	done := make(chan struct{})
+	go func() {
+		state.setLastResponse(value)
+		close(done)
+	}()
+	<-done
+	if got := state.getLastResponse(); got != value {
+		t.Errorf("getLastResponse() = %q, want %q", got, value)
+	}
+}

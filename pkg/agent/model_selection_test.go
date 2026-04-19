@@ -52,7 +52,7 @@ func TestSelectModelForQuery(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := selectModelForQuery(tt.query, AgentDefault, "")
 			if result != tt.expectedModel {
-				t.Errorf("selectModelForQuery(%q, AgentDefault) = %q, want %q", tt.query, result, tt.expectedModel)
+				t.Errorf("selectModelForQuery(%q, AgentDefault, \"\") = %q, want %q", tt.query, result, tt.expectedModel)
 			}
 		})
 	}
