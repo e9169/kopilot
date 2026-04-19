@@ -416,6 +416,9 @@ const (
 
 	// fmtErrorBullet is the format string for inline error messages
 	fmtErrorBullet = "  %s●%s Error: %v\n"
+
+	// subCmdList is the "list" sub-command token used by /agent, /mcp, and /context.
+	subCmdList = "list"
 )
 
 const (
@@ -1362,7 +1365,7 @@ func handleAgentCommand(input string, state *agentState) (isCommand bool, newAge
 	parts := strings.Fields(trimmed)
 
 	// "/agent" or "/agent list" → show status and roster
-	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == "list") {
+	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == subCmdList) {
 		printAgentList(state)
 		return true, state.selectedAgent, nil
 	}
@@ -1496,7 +1499,7 @@ func dispatchMCPCommand(deps *loopDeps, input string, ts *turnState) (bool, erro
 	}
 
 	parts := strings.Fields(trimmed)
-	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == "list") {
+	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == subCmdList) {
 		printMCPList(deps.state.mcpConfigPath)
 		return true, nil
 	}
@@ -1743,7 +1746,12 @@ func extractAttachments(input string) (string, []copilot.Attachment) {
 			kept = append(kept, w)
 			continue
 		}
-		if _, err := os.Stat(abs); err != nil {
+		fi, statErr := os.Stat(abs)
+		if statErr != nil {
+			kept = append(kept, w)
+			continue
+		}
+		if !fi.Mode().IsRegular() {
 			kept = append(kept, w)
 			continue
 		}
@@ -1786,7 +1794,13 @@ func handleShellPassthrough(cmdStr string) {
 		return
 	}
 	fmt.Printf("  %s$ %s%s\n", colorDim, cmdStr, colorReset)
-	cmd := exec.Command("sh", "-c", cmdStr) // #nosec G204
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd.exe", "/C", cmdStr) // #nosec G204
+	} else {
+		cmd = exec.Command("sh", "-c", cmdStr) // #nosec G204
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -1942,7 +1956,7 @@ func handleModelCommand(deps *loopDeps, input string, ts *turnState) (bool, erro
 // handleContextCommand processes /context list and /context use <name> commands.
 func handleContextCommand(deps *loopDeps, input string) (bool, error) {
 	parts := strings.Fields(input)
-	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == "list") {
+	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == subCmdList) {
 		clusters := deps.k8sProvider.GetClusters()
 		current := deps.k8sProvider.GetCurrentContext()
 		fmt.Println()
@@ -1975,6 +1989,56 @@ func handleContextCommand(deps *loopDeps, input string) (bool, error) {
 	return true, nil
 }
 
+// handleLast prints the last assistant response to stdout.
+func handleLast(state *agentState) (bool, error) {
+	if state.lastResponseText == "" {
+		fmt.Printf("  %s●%s No previous response to show\n", colorDim, colorReset)
+	} else {
+		fmt.Println()
+		fmt.Println(state.lastResponseText)
+	}
+	return true, nil
+}
+
+// handleCopy copies the last assistant response to the system clipboard.
+func handleCopy(state *agentState) (bool, error) {
+	if state.lastResponseText == "" {
+		fmt.Printf("  %s●%s Nothing to copy yet\n", colorDim, colorReset)
+		return true, nil
+	}
+	if err := copyToClipboard(state.lastResponseText); err != nil {
+		fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
+		return true, nil
+	}
+	fmt.Printf("  %s●%s Copied to clipboard (%d characters)\n",
+		colorGreen, colorReset, len(state.lastResponseText))
+	return true, nil
+}
+
+// handleStreamer toggles or sets streamer mode (on/off).
+func handleStreamer(state *agentState, input string) (bool, error) {
+	parts := strings.Fields(input)
+	if len(parts) >= 2 {
+		switch strings.ToLower(parts[1]) {
+		case "on":
+			state.streamerMode = true
+		case "off":
+			state.streamerMode = false
+		default:
+			fmt.Printf("  %s●%s Usage: /streamer [on|off]\n", colorRed, colorReset)
+			return true, nil
+		}
+	} else {
+		state.streamerMode = !state.streamerMode
+	}
+	if state.streamerMode {
+		fmt.Printf("  %s●%s Streamer mode on — quota info hidden\n", colorGreen, colorReset)
+	} else {
+		fmt.Printf("  %s●%s Streamer mode off\n", colorGreen, colorReset)
+	}
+	return true, nil
+}
+
 // dispatchUXCommand handles the new UX-related slash commands introduced in this release.
 // Returns (handled bool, err error).
 func dispatchUXCommand(deps *loopDeps, input string, ts *turnState) (bool, error) {
@@ -1988,46 +2052,11 @@ func dispatchUXCommand(deps *loopDeps, input string, ts *turnState) (bool, error
 	case lower == "/compact":
 		return true, handleCompact(deps, ts)
 	case lower == "/last":
-		if deps.state.lastResponseText == "" {
-			fmt.Printf("  %s●%s No previous response to show\n", colorDim, colorReset)
-		} else {
-			fmt.Println()
-			fmt.Println(deps.state.lastResponseText)
-		}
-		return true, nil
+		return handleLast(deps.state)
 	case lower == "/copy":
-		if deps.state.lastResponseText == "" {
-			fmt.Printf("  %s●%s Nothing to copy yet\n", colorDim, colorReset)
-			return true, nil
-		}
-		if err := copyToClipboard(deps.state.lastResponseText); err != nil {
-			fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
-			return true, nil
-		}
-		fmt.Printf("  %s●%s Copied to clipboard (%d characters)\n",
-			colorGreen, colorReset, len(deps.state.lastResponseText))
-		return true, nil
+		return handleCopy(deps.state)
 	case lower == "/streamer" || strings.HasPrefix(lower, "/streamer "):
-		parts := strings.Fields(input)
-		if len(parts) >= 2 {
-			switch strings.ToLower(parts[1]) {
-			case "on":
-				deps.state.streamerMode = true
-			case "off":
-				deps.state.streamerMode = false
-			default:
-				fmt.Printf("  %s●%s Usage: /streamer [on|off]\n", colorRed, colorReset)
-				return true, nil
-			}
-		} else {
-			deps.state.streamerMode = !deps.state.streamerMode
-		}
-		if deps.state.streamerMode {
-			fmt.Printf("  %s●%s Streamer mode on — quota info hidden\n", colorGreen, colorReset)
-		} else {
-			fmt.Printf("  %s●%s Streamer mode off\n", colorGreen, colorReset)
-		}
-		return true, nil
+		return handleStreamer(deps.state, input)
 	case strings.HasPrefix(lower, "/model"):
 		return handleModelCommand(deps, input, ts)
 	case strings.HasPrefix(lower, "/context"):
