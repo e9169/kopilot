@@ -51,11 +51,12 @@ An interactive agent built with the **official GitHub Copilot SDK** in Go that p
   - Uses `gpt-4.1` for simple queries (list, status, health checks)
   - Automatically upgrades to `claude-sonnet-4.6` for troubleshooting and complex operations
   - 50-70% cost reduction while maintaining quality for critical tasks
-- 🎭 **Specialist Agent Personas**: Four focused AI personas for advanced operations (see [docs/AGENTS.md](docs/AGENTS.md))
+- 🎭 **Specialist Agent Personas**: Five focused AI personas for advanced operations (see [docs/AGENTS.md](docs/AGENTS.md))
   - `--agent debugger` — root cause analysis, log correlation, pod failure diagnosis
   - `--agent security` — RBAC auditing, privilege escalation detection, network policy review
   - `--agent optimizer` — resource right-sizing, HPA/VPA recommendations, cost optimization
   - `--agent gitops` — Flux/ArgoCD sync status, drift detection, reconciliation diagnostics
+  - `--agent sanitizer` — workload linting, best-practice scoring, A–F cluster grading
   - Switch agents at runtime with `/agent <name>` — no restart required
 - 🚀 **GitHub Copilot CLI-inspired UX**: Clean, modern interface with chevron prompt (❯) and streamlined design
 
@@ -236,6 +237,7 @@ kopilot --version
 ./bin/kopilot --agent security
 ./bin/kopilot --agent optimizer
 ./bin/kopilot --agent gitops
+./bin/kopilot --agent sanitizer
 
 # Combine agent and mode
 ./bin/kopilot --agent optimizer --interactive
@@ -279,7 +281,7 @@ KUBECONFIG=/path/to/kubeconfig ./bin/kopilot
 
 - `/readonly` - Switch to read-only mode
 - `/interactive` - Switch to interactive mode
-- `/mode` - Show current execution mode
+- `/mode`, `/status` - Show current execution mode
 
 #### Runtime Agent Switching
 
@@ -288,20 +290,57 @@ KUBECONFIG=/path/to/kubeconfig ./bin/kopilot
 - `/agent security` - Switch to the Security auditor
 - `/agent optimizer` - Switch to the Optimizer specialist
 - `/agent gitops` - Switch to the GitOps specialist
+- `/agent sanitizer` - Switch to the Sanitizer (best-practice scoring)
 - `/agent default` - Return to the default generalist persona
+
+#### Runtime Context Switching
+
+- `/context list` - List all kubeconfig contexts
+- `/context use <name>` - Switch active Kubernetes context
+
+#### MCP Servers
+
+- `/mcp list` - List configured MCP servers
+- `/mcp add <name> <url>` - Add or update an MCP server (takes effect immediately)
+- `/mcp delete <name>` - Remove an MCP server
+
+#### Model Selection
+
+- `/model` - Show current model or routing mode
+- `/model <name>` - Force a specific model for this session
+- `/model reset` - Re-enable automatic model routing
+
+#### Session Management
+
+- `/clear`, `/new` - Start a fresh conversation
+- `/compact` - Summarize history to save context window
+- `/usage` - Show session duration, turns, and quota
+- `/last` - Re-show the last full AI response
+- `/copy` - Copy the last response to clipboard
+- `/streamer [on|off]` - Hide quota badge (useful for screen-sharing)
 
 #### Help
 
 - `/help` - Show all available runtime commands
 
+#### Shortcuts
+
+| Shortcut | Description |
+| -------- | ----------- |
+| `@<filepath>` | Attach a local file to the next message for AI analysis |
+| `!<command>` | Run a shell command directly without involving AI |
+| `Ctrl+C` | Cancel current input or abort an in-progress AI response |
+| `Ctrl+D` | Exit Kopilot |
+
 ### Command-Line Flags
 
 - `--version` - Display version information
 - `--interactive` - Enable interactive mode (asks before write operations)
-- `--agent` - Set specialist agent persona: `default`, `debugger`, `security`, `optimizer`, `gitops` (default: `default`)
+- `--agent` - Set specialist agent persona: `default`, `debugger`, `security`, `optimizer`, `gitops`, `sanitizer` (default: `default`)
 - `--kubeconfig` - Path to kubeconfig file (default: `$KUBECONFIG` or `~/.kube/config`)
 - `--context` - Override kubeconfig context
 - `--output` - Output format: `text` or `json`
+- `--mcp-config` - Path to MCP server config file (default: `~/.kopilot/mcp.json`)
 - `-v, --verbose` - Enable verbose logging with timestamps
 - `--help` - Show usage information
 
@@ -352,7 +391,7 @@ The agent will execute kubectl commands on your behalf and explain the results. 
 
 ### Specialist Agent Personas
 
-Kopilot ships with four domain-specific AI personas that focus the assistant on a particular operational area. All specialist agents always use the premium model for the best reasoning quality.
+Kopilot ships with five domain-specific AI personas that focus the assistant on a particular operational area. All specialist agents always use the premium model for the best reasoning quality.
 
 | Agent | Flag | Focus |
 | ----- | ---- | ----- |
@@ -361,6 +400,7 @@ Kopilot ships with four domain-specific AI personas that focus the assistant on 
 | `security` 🛡️ | `--agent security` | RBAC auditing, privilege checks, network policies |
 | `optimizer` ⚡ | `--agent optimizer` | Resource right-sizing, HPA/VPA, cost savings |
 | `gitops` 🔄 | `--agent gitops` | Flux/ArgoCD sync, drift detection, reconciliation |
+| `sanitizer` 🧹 | `--agent sanitizer` | Workload linting, best-practice scoring, A–F cluster grading |
 
 Agents can be switched at runtime with `/agent <name>`. See [docs/AGENTS.md](docs/AGENTS.md) for full details and example prompts.
 
