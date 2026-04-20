@@ -251,7 +251,7 @@ See the [Execution Modes documentation](https://github.com/e9169/kopilot/blob/ma
 
 ### 🎭 Specialist Agent Personas
 
-Kopilot ships four domain-focused AI personas that sharpen the assistant for specific operational areas. Start with `--agent <name>` or switch mid-session with `/agent <name>`.
+Kopilot ships five domain-focused AI personas that sharpen the assistant for specific operational areas. Start with `--agent <name>` or switch mid-session with `/agent <name>`.
 
 **🔍 Debugger** (`--agent debugger`)
 Root cause analysis, log correlation, and pod failure diagnosis. Starts with events and recent changes, correlates pod status and logs, traces failure chains.
