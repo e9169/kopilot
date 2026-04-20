@@ -8,7 +8,7 @@ This directory contains technical documentation for developers and contributors.
 - **[AGENTS.md](AGENTS.md)** - Specialist agent personas (Debugger, Security, Optimizer, GitOps) — how to use them and what each one does
 - **[EXECUTION_MODES.md](EXECUTION_MODES.md)** - Execution mode system (read-only vs interactive) for safe kubectl operations
 - **[TESTING.md](TESTING.md)** - Comprehensive testing guide including test structure, coverage reports, and how to run tests
-- **[MODEL_SELECTION.md](MODEL_SELECTION.md)** - Intelligent model selection strategy for cost optimization (gpt-4o-mini vs gpt-4o)
+- **[MODEL_SELECTION.md](MODEL_SELECTION.md)** - Intelligent model selection strategy for cost optimization (gpt-4.1 vs claude-sonnet-4.6)
 - **[PERFORMANCE.md](PERFORMANCE.md)** - Performance optimization details, including parallel cluster checking implementation
 - **[INTERACTIVE_FEATURES.md](INTERACTIVE_FEATURES.md)** - Interactive and proactive features implementation, including kubectl command execution
 - **[VERSION_MANAGEMENT.md](VERSION_MANAGEMENT.md)** - Versioning strategy and release workflow using Git tags

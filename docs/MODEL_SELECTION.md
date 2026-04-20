@@ -6,7 +6,7 @@ Kopilot now uses intelligent model selection to optimize costs while maintaining
 
 ## Model Strategy
 
-### Cost-Effective Model: `gpt-4o-mini`
+### Cost-Effective Model: `gpt-4.1`
 
 **Use Cases:**
 
@@ -21,7 +21,7 @@ Kopilot now uses intelligent model selection to optimize costs while maintaining
 - Fast response times
 - Sufficient for straightforward tasks
 
-### Premium Model: `gpt-4o`
+### Premium Model: `claude-sonnet-4.6`
 
 **Use Cases:**
 
@@ -47,7 +47,7 @@ Kopilot now uses intelligent model selection to optimize costs while maintaining
 
 The model selection is dynamic and happens automatically:
 
-1. **Initial Session**: Starts with `gpt-4o-mini` for health checks
+1. **Initial Session**: Starts with `gpt-4.1` for health checks
 2. **Agent Check**: If a specialist agent is active (`debugger`, `security`, `optimizer`, `gitops`), always use the premium model regardless of query text
 3. **Query Analysis**: For the `default` agent, each user query is analyzed for complexity
 4. **Session Recreation**: When a different model is needed, the session is recreated with the optimal model
@@ -118,8 +118,8 @@ By using this strategy:
 Model switches are logged:
 
 ```text
-2024/01/15 10:30:45 Switching from gpt-4o-mini to gpt-4o for query complexity
-2024/01/15 10:30:45 Session created with model: gpt-4o
+2024/01/15 10:30:45 Switching from gpt-4.1 to claude-sonnet-4.6 for query complexity
+2024/01/15 10:30:45 Session created with model: claude-sonnet-4.6
 ```
 
 ## Future Enhancements

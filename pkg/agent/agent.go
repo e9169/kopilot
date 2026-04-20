@@ -5,11 +5,15 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"math/rand/v2"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -394,8 +398,8 @@ func ParseAgentType(s string) (AgentType, error) {
 
 const (
 	// Default model selection constants
-	defaultModelCostEffective = "gpt-4o-mini" // Cost-effective model for simple queries
-	defaultModelPremium       = "gpt-4o"      // Premium model for complex tasks
+	defaultModelCostEffective = "gpt-4.1"           // Cost-effective model for simple queries
+	defaultModelPremium       = "claude-sonnet-4.6" // Premium model for complex tasks
 
 	// ANSI color codes
 	colorReset     = "\033[0m"
@@ -412,6 +416,9 @@ const (
 
 	// fmtErrorBullet is the format string for inline error messages
 	fmtErrorBullet = "  %s●%s Error: %v\n"
+
+	// subCmdList is the "list" sub-command token used by /agent, /mcp, and /context.
+	subCmdList = "list"
 )
 
 const (
@@ -465,6 +472,18 @@ type agentState struct {
 	// sending a user prompt and cleared when the turn ends.
 	abortCurrentTurn func()
 	abortMu          sync.Mutex
+	// responseMu guards lastResponseText which is written from the event-handler
+	// goroutine and read from the main REPL loop.
+	responseMu sync.RWMutex
+	// UX enhancements
+	forcedModel        string    // /model override; empty = auto-routing
+	streamerMode       bool      // /streamer: hide quota badge in prompt
+	sessionStart       time.Time // for /usage statistics
+	turnCount          int       // total turns this session
+	turnsMiniCount     int       // turns sent to cost-effective model
+	turnsGPT4Count     int       // turns sent to premium model
+	premiumUsedAtStart float64   // quotaUsed at session start (delta for /usage)
+	lastResponseText   string    // for /copy, /last, and truncation; guarded by responseMu
 }
 
 // setAbortCurrentTurn installs (or clears) the active-turn abort callback.
@@ -482,6 +501,20 @@ func (s *agentState) abortTurnIfActive() {
 	if fn != nil {
 		fn()
 	}
+}
+
+// setLastResponse stores the last assistant response text in a thread-safe manner.
+func (s *agentState) setLastResponse(text string) {
+	s.responseMu.Lock()
+	defer s.responseMu.Unlock()
+	s.lastResponseText = text
+}
+
+// getLastResponse returns the last assistant response text in a thread-safe manner.
+func (s *agentState) getLastResponse() string {
+	s.responseMu.RLock()
+	defer s.responseMu.RUnlock()
+	return s.lastResponseText
 }
 
 // loopDeps groups the immutable runtime dependencies shared across the interactive session loop.
@@ -578,42 +611,73 @@ Cluster targeting:
 Be helpful, clear, and conversational.`
 }
 
+// maxDisplayLines is the threshold above which long responses are truncated in the terminal.
+const maxDisplayLines = 30
+
 // onMessageEvent handles the final complete assistant message.
-func onMessageEvent(event copilot.SessionEvent) {
-	if event.Data.Content != nil && *event.Data.Content != "" {
+// When streaming was active the content was already printed incrementally;
+// this function only stores it and closes the streaming state in that case.
+func onMessageEvent(event copilot.SessionEvent, state *agentState) {
+	d, ok := event.Data.(*copilot.AssistantMessageData)
+	if !ok {
+		return
+	}
+	if streamingActive.Swap(false) {
+		// Content was already streamed incrementally — just finalise
 		fmt.Println()
-		fmt.Println(*event.Data.Content)
+		spinnerPaused.Store(0)
+		if d.Content != "" {
+			state.setLastResponse(d.Content)
+		}
+		return
+	}
+	if d.Content == "" {
+		return
+	}
+	content := d.Content
+	state.setLastResponse(content)
+	fmt.Println()
+	lines := strings.Split(content, "\n")
+	if len(lines) > maxDisplayLines {
+		for _, line := range lines[:maxDisplayLines] {
+			fmt.Println(line)
+		}
+		remaining := len(lines) - maxDisplayLines
+		fmt.Printf("  %s... (%d more lines) — type /last to see full output%s\n",
+			colorDim, remaining, colorReset)
+	} else {
+		fmt.Println(content)
 	}
 }
 
 // onSessionErrorEvent prints errors from session.error events to the user.
 func onSessionErrorEvent(event copilot.SessionEvent) {
-	d := event.Data
+	d, ok := event.Data.(*copilot.SessionErrorData)
+	if !ok {
+		return
+	}
 	msg := "(unknown session error)"
-	if d.Message != nil && *d.Message != "" {
-		msg = *d.Message
+	if d.Message != "" {
+		msg = d.Message
 	}
 	code := ""
 	if d.StatusCode != nil {
 		code = fmt.Sprintf(" [status %d]", *d.StatusCode)
 	}
 	errType := ""
-	if d.ErrorType != nil && *d.ErrorType != "" {
-		errType = fmt.Sprintf(" [%s]", *d.ErrorType)
+	if d.ErrorType != "" {
+		errType = fmt.Sprintf(" [%s]", d.ErrorType)
 	}
-	reason := ""
-	if d.ErrorReason != nil && *d.ErrorReason != "" {
-		reason = fmt.Sprintf(" (reason: %s)", *d.ErrorReason)
-	}
-	fmt.Fprintf(os.Stderr, "Error%s%s: %s%s\n", code, errType, msg, reason)
+	fmt.Fprintf(os.Stderr, "Error%s%s: %s\n", code, errType, msg)
 }
 
 // onUsageEvent records quota information from usage snapshots.
 func onUsageEvent(event copilot.SessionEvent, state *agentState) {
-	if event.Data.QuotaSnapshots == nil {
+	d, ok := event.Data.(*copilot.AssistantUsageData)
+	if !ok || d.QuotaSnapshots == nil {
 		return
 	}
-	snapshot, exists := event.Data.QuotaSnapshots["premium_interactions"]
+	snapshot, exists := d.QuotaSnapshots["premium_interactions"]
 	if exists && snapshot.RemainingPercentage >= 0 {
 		state.quotaPercentage = snapshot.RemainingPercentage
 		state.quotaUnlimited = snapshot.IsUnlimitedEntitlement
@@ -627,7 +691,9 @@ func setupSessionEventHandler(session *copilot.Session, isIdlePtr *bool, state *
 	session.On(func(event copilot.SessionEvent) {
 		switch event.Type {
 		case "assistant.message":
-			onMessageEvent(event)
+			onMessageEvent(event, state)
+		case "assistant.message_delta":
+			onDeltaEvent(event)
 		case "session.error":
 			onSessionErrorEvent(event)
 		case "session.idle":
@@ -688,6 +754,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 		quotaPercentage: -1,
 		selectedAgent:   agentType,
 		mcpConfigPath:   mcpConfigPath,
+		sessionStart:    time.Now(),
 	}
 
 	// Create a cancellable context for the entire agent lifecycle
@@ -815,7 +882,7 @@ func printBannerExamples(agentType AgentType) {
 	}
 	fmt.Println()
 	fmt.Printf("  %sType your request to get started. Enter 'exit' to quit.%s\n", colorDim, colorReset)
-	fmt.Printf("  %sHint: /help to see all commands or /agent list to see specialist agents.%s\n", colorDim, colorReset)
+	fmt.Printf("  %sHint: /help for all commands • @<file> to attach • !<cmd> to run shell • Ctrl+C to cancel%s\n", colorDim, colorReset)
 	fmt.Println()
 }
 
@@ -923,7 +990,7 @@ func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProv
 
 	session, err := client.CreateSession(ctx, &copilot.SessionConfig{
 		Model:               model,
-		Streaming:           false,
+		Streaming:           true,
 		Tools:               tools,
 		CustomAgents:        buildCustomAgents(),
 		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
@@ -945,7 +1012,11 @@ func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProv
 // selectModelForQuery determines the best model based on query complexity, intent, and active agent.
 // Specialist agents always use the premium model — their reasoning tasks benefit from higher
 // model capacity regardless of how simple the query text appears.
-func selectModelForQuery(query string, agentType AgentType) string {
+// When forcedModel is non-empty it overrides all automatic selection logic.
+func selectModelForQuery(query string, agentType AgentType, forcedModel string) string {
+	if forcedModel != "" {
+		return forcedModel
+	}
 	// Specialist agents always warrant the premium model
 	if def, ok := agentDefinitions[agentType]; ok && def.preferPremium {
 		return modelPremium
@@ -999,6 +1070,9 @@ var spinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "�
 
 // spinnerPaused is set to 1 while a tool needs exclusive terminal access (e.g. interactive confirmation prompt).
 var spinnerPaused atomic.Int32
+
+// streamingActive is true while an assistant.message.delta stream is in progress.
+var streamingActive atomic.Bool
 
 // pauseSpinner suppresses the spinner and clears any in-progress spinner line.
 // The caller must call the returned resume function when done.
@@ -1090,7 +1164,7 @@ func (p *cyanPainter) Paint(line []rune, _ int) []rune {
 // Input text colouring is handled by cyanPainter, not the prompt string.
 func rlPromptString(state *agentState) string {
 	wrap := func(seq string) string { return "\x01" + seq + "\x02" }
-	if isJSONOutput(state.outputFormat) || state.quotaUnlimited || state.quotaPercentage < 0 {
+	if isJSONOutput(state.outputFormat) || state.quotaUnlimited || state.quotaPercentage < 0 || state.streamerMode {
 		return "❯ "
 	}
 	pct := state.quotaPercentage
@@ -1109,16 +1183,22 @@ func rlPromptString(state *agentState) string {
 	return wrap(col) + indicator + wrap(colorReset) + " ❯ "
 }
 
-// newReadlineInstance creates a readline instance with in-session history.
+// newReadlineInstance creates a readline instance with persistent cross-session history.
+// If historyFilePath() returns an empty string (e.g., no home dir), history persistence
+// is simply disabled rather than failing to start the REPL.
 func newReadlineInstance() (*readline.Instance, error) {
-	return readline.NewEx(&readline.Config{
+	cfg := &readline.Config{
 		HistoryLimit:           500,
 		InterruptPrompt:        "^C",
 		EOFPrompt:              "exit",
 		HistorySearchFold:      true,
 		DisableAutoSaveHistory: false,
 		Painter:                &cyanPainter{},
-	})
+	}
+	if hp := historyFilePath(); hp != "" {
+		cfg.HistoryFile = hp
+	}
+	return readline.NewEx(cfg)
 }
 
 // readUserInput reads and trims user input via the readline instance.
@@ -1154,8 +1234,12 @@ func isUnknownSlashCommand(input string) bool {
 		return false
 	}
 	lower := strings.TrimSpace(strings.ToLower(input))
-	// Known prefixes — keep in sync with handleModeSwitch, handleAgentCommand, handleMCPCommand.
-	known := []string{"/help", "/mode", "/status", "/readonly", "/interactive", "/agent", "/mcp"}
+	// Known prefixes — keep in sync with handleModeSwitch, handleAgentCommand, handleMCPCommand, dispatchUXCommand.
+	known := []string{
+		"/help", "/mode", "/status", "/readonly", "/interactive", "/agent", "/mcp",
+		"/clear", "/new", "/usage", "/compact", "/last", "/copy",
+		"/model", "/streamer", "/context",
+	}
 	for _, prefix := range known {
 		if lower == prefix || strings.HasPrefix(lower, prefix+" ") {
 			return false
@@ -1171,23 +1255,44 @@ func printHelpMessage(state *agentState) {
 	fmt.Printf("  %s━━ Kopilot Commands ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
 	fmt.Println()
 	fmt.Printf("  %sSession%s\n", colorDim, colorReset)
-	fmt.Printf("    %s/help%s             show this help message\n", colorCyan, colorReset)
-	fmt.Printf("    %sexit%s, %squit%s        exit Kopilot\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("    %s/help%s              show this help message\n", colorCyan, colorReset)
+	fmt.Printf("    %s/clear%s, %s/new%s        start a fresh conversation\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("    %s/usage%s             show session duration, turns, and quota\n", colorCyan, colorReset)
+	fmt.Printf("    %s/compact%s           summarize history to save context window\n", colorCyan, colorReset)
+	fmt.Printf("    %s/last%s              re-show the last full response\n", colorCyan, colorReset)
+	fmt.Printf("    %s/copy%s              copy the last response to clipboard\n", colorCyan, colorReset)
+	fmt.Printf("    %sexit%s, %squit%s         exit Kopilot\n", colorCyan, colorReset, colorCyan, colorReset)
 	fmt.Println()
 	fmt.Printf("  %sExecution Mode%s\n", colorDim, colorReset)
-	fmt.Printf("    %s/mode%s, %s/status%s       show current execution mode\n", colorCyan, colorReset, colorCyan, colorReset)
-	fmt.Printf("    %s/readonly%s [on]       switch to 🔒 read-only mode (blocks write operations)\n", colorCyan, colorReset)
-	fmt.Printf("    %s/interactive%s [on]    switch to 🔓 interactive mode (prompts before writes)\n", colorCyan, colorReset)
+	fmt.Printf("    %s/mode%s, %s/status%s        show current execution mode\n", colorCyan, colorReset, colorCyan, colorReset)
+	fmt.Printf("    %s/readonly%s [on]        switch to 🔒 read-only mode (blocks write operations)\n", colorCyan, colorReset)
+	fmt.Printf("    %s/interactive%s [on]     switch to 🔓 interactive mode (prompts before writes)\n", colorCyan, colorReset)
+	fmt.Println()
+	fmt.Printf("  %sModel%s\n", colorDim, colorReset)
+	fmt.Printf("    %s/model%s              show current model / routing mode\n", colorCyan, colorReset)
+	fmt.Printf("    %s/model <name>%s       force a specific model for this session\n", colorCyan, colorReset)
+	fmt.Printf("    %s/model reset%s        re-enable automatic model routing\n", colorCyan, colorReset)
+	fmt.Printf("    %s/streamer%s [on|off]  hide quota badge (useful for screen-sharing)\n", colorCyan, colorReset)
+	fmt.Println()
+	fmt.Printf("  %sKubernetes Context%s\n", colorDim, colorReset)
+	fmt.Printf("    %s/context list%s         list all kubeconfig contexts\n", colorCyan, colorReset)
+	fmt.Printf("    %s/context use <name>%s   switch active context\n", colorCyan, colorReset)
 	fmt.Println()
 	fmt.Printf("  %sSpecialist Agents%s\n", colorDim, colorReset)
-	fmt.Printf("    %s/agent%s             show active agent and available roster\n", colorCyan, colorReset)
-	fmt.Printf("    %s/agent list%s        same as /agent\n", colorCyan, colorReset)
-	fmt.Printf("    %s/agent <name>%s      switch agent  [ %s ]\n", colorCyan, colorReset, agentNames)
+	fmt.Printf("    %s/agent%s              show active agent and available roster\n", colorCyan, colorReset)
+	fmt.Printf("    %s/agent list%s         same as /agent\n", colorCyan, colorReset)
+	fmt.Printf("    %s/agent <name>%s       switch agent  [ %s ]\n", colorCyan, colorReset, agentNames)
 	fmt.Println()
 	fmt.Printf("  %sMCP Servers%s\n", colorDim, colorReset)
 	fmt.Printf("    %s/mcp list%s              list configured MCP servers\n", colorCyan, colorReset)
 	fmt.Printf("    %s/mcp add <name> <url>%s  add or update an MCP server\n", colorCyan, colorReset)
 	fmt.Printf("    %s/mcp delete <name>%s     remove an MCP server\n", colorCyan, colorReset)
+	fmt.Println()
+	fmt.Printf("  %sShortcuts%s\n", colorDim, colorReset)
+	fmt.Printf("    %s@<file>%s                attach a file to the next message\n", colorCyan, colorReset)
+	fmt.Printf("    %s!<command>%s             run a shell command without AI\n", colorCyan, colorReset)
+	fmt.Printf("    %sCtrl+C%s                cancel current input / abort AI response\n", colorCyan, colorReset)
+	fmt.Printf("    %sCtrl+D%s                exit\n", colorCyan, colorReset)
 	fmt.Println()
 	fmt.Printf("  %sCurrent mode: %s  |  Active agent: %s%s\n", colorDim, state.mode, state.selectedAgent, colorReset)
 	fmt.Println()
@@ -1286,7 +1391,7 @@ func handleAgentCommand(input string, state *agentState) (isCommand bool, newAge
 	parts := strings.Fields(trimmed)
 
 	// "/agent" or "/agent list" → show status and roster
-	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == "list") {
+	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == subCmdList) {
 		printAgentList(state)
 		return true, state.selectedAgent, nil
 	}
@@ -1354,6 +1459,12 @@ func processTurn(deps *loopDeps, rl *readline.Instance, ts *turnState) (exit boo
 		return false, nil
 	}
 
+	// Shell passthrough: lines starting with ! bypass the AI entirely
+	if strings.HasPrefix(input, "!") {
+		handleShellPassthrough(strings.TrimPrefix(input, "!"))
+		return false, nil
+	}
+
 	if isExitCommand(input) {
 		fmt.Println("")
 		return true, nil
@@ -1364,6 +1475,10 @@ func processTurn(deps *loopDeps, rl *readline.Instance, ts *turnState) (exit boo
 
 	if handleModeSwitch(input, deps.state) {
 		return false, nil
+	}
+
+	if handled, err := dispatchUXCommand(deps, input, ts); handled {
+		return false, err
 	}
 
 	if handled, err := dispatchAgentCommand(deps, input, ts); handled {
@@ -1410,7 +1525,7 @@ func dispatchMCPCommand(deps *loopDeps, input string, ts *turnState) (bool, erro
 	}
 
 	parts := strings.Fields(trimmed)
-	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == "list") {
+	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == subCmdList) {
 		printMCPList(deps.state.mcpConfigPath)
 		return true, nil
 	}
@@ -1546,16 +1661,64 @@ func printLongRunningWarning(agentType AgentType) {
 }
 
 // sendToModel selects the best model for the query and sends it, updating ts as needed.
-func sendToModel(deps *loopDeps, ts *turnState, input string) error {
-	if optimalModel := selectModelForQuery(input, deps.state.selectedAgent); optimalModel != ts.model {
-		newSession, err := switchToModel(deps, ts.session, optimalModel)
-		if err != nil {
-			return err
-		}
-		ts.session = newSession
-		ts.model = optimalModel
+// printAttachments logs attachment info for non-JSON output.
+func printAttachments(attachments []copilot.Attachment, outputFormat OutputFormat) {
+	if isJSONOutput(outputFormat) {
+		return
 	}
-	if !isJSONOutput(deps.state.outputFormat) && isLongRunningQuery(input, deps.state.selectedAgent) {
+	for _, a := range attachments {
+		if a.Path == nil {
+			continue
+		}
+		fi, err := os.Stat(*a.Path)
+		if err != nil {
+			continue
+		}
+		dname := ""
+		if a.DisplayName != nil {
+			dname = *a.DisplayName
+		}
+		fmt.Printf("  %s📎 Attached: %s (%s)%s\n", colorCyan, dname, formatBytes(fi.Size()), colorReset)
+	}
+}
+
+// maybeSwapModel switches the session to the optimal model if it differs from the current one.
+func maybeSwapModel(deps *loopDeps, ts *turnState, prompt string) error {
+	optimalModel := selectModelForQuery(prompt, deps.state.selectedAgent, deps.state.forcedModel)
+	if optimalModel == ts.model {
+		return nil
+	}
+	newSession, err := switchToModel(deps, ts.session, optimalModel)
+	if err != nil {
+		return err
+	}
+	ts.session = newSession
+	ts.model = optimalModel
+	return nil
+}
+
+// trackTurnModelUsage increments per-turn counters based on the model used.
+func trackTurnModelUsage(state *agentState, model string) {
+	state.turnCount++
+	if model == modelCostEffective {
+		state.turnsMiniCount++
+	} else {
+		state.turnsGPT4Count++
+	}
+}
+
+func sendToModel(deps *loopDeps, ts *turnState, input string) error {
+	// @ file attachment injection
+	prompt, attachments := extractAttachments(input)
+	printAttachments(attachments, deps.state.outputFormat)
+	if prompt == "" {
+		prompt = input // fallback if all tokens were attachments
+	}
+
+	if err := maybeSwapModel(deps, ts, prompt); err != nil {
+		return err
+	}
+	if !isJSONOutput(deps.state.outputFormat) && isLongRunningQuery(prompt, deps.state.selectedAgent) {
 		printLongRunningWarning(deps.state.selectedAgent)
 	}
 	*deps.isIdle = false
@@ -1564,12 +1727,418 @@ func sendToModel(deps *loopDeps, ts *turnState, input string) error {
 			log.Printf("Warning: failed to abort current turn: %v", abortErr)
 		}
 	})
-	_, err := ts.session.Send(deps.ctx, copilot.MessageOptions{Prompt: input})
+	msgOpts := copilot.MessageOptions{
+		Prompt:      prompt,
+		Attachments: attachments,
+	}
+	_, err := ts.session.Send(deps.ctx, msgOpts)
 	if err != nil {
 		deps.state.setAbortCurrentTurn(nil)
 		return fmt.Errorf("failed to send message: %w", err)
 	}
+	trackTurnModelUsage(deps.state, ts.model)
 	return nil
+}
+
+// historyFilePath returns the path to the persistent readline history file.
+// Creates ~/.kopilot/ if it does not exist.
+func historyFilePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Join(home, ".kopilot")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "history")
+}
+
+// formatBytes formats a byte count as a human-readable string.
+func formatBytes(n int64) string {
+	const kb = 1024
+	const mb = kb * 1024
+	switch {
+	case n >= mb:
+		return fmt.Sprintf("%.1f MB", float64(n)/float64(mb))
+	case n >= kb:
+		return fmt.Sprintf("%.1f KB", float64(n)/float64(kb))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
+
+// estimateTokens returns a rough token count estimate (1 token ≈ 4 chars).
+func estimateTokens(text string) int {
+	return len(text) / 4
+}
+
+// extractAttachments parses @<filepath> tokens from the input string.
+// Valid @tokens that refer to readable files are converted to Attachments;
+// un-resolvable tokens are left in the returned cleaned prompt string.
+func extractAttachments(input string) (string, []copilot.Attachment) {
+	words := strings.Fields(input)
+	var kept []string
+	var attachments []copilot.Attachment
+	for _, w := range words {
+		if !strings.HasPrefix(w, "@") {
+			kept = append(kept, w)
+			continue
+		}
+		path := strings.TrimPrefix(w, "@")
+		if path == "" {
+			kept = append(kept, w)
+			continue
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			kept = append(kept, w)
+			continue
+		}
+		fi, statErr := os.Stat(abs)
+		if statErr != nil {
+			kept = append(kept, w)
+			continue
+		}
+		if !fi.Mode().IsRegular() {
+			kept = append(kept, w)
+			continue
+		}
+		f, openErr := os.Open(abs) // #nosec G304 — path is already resolved via filepath.Abs
+		if openErr != nil {
+			kept = append(kept, w)
+			continue
+		}
+		if closeErr := f.Close(); closeErr != nil {
+			log.Printf("Warning: failed to close attachment file %s: %v", abs, closeErr)
+		}
+		pathCopy := abs
+		nameCopy := filepath.Base(abs)
+		attachments = append(attachments, copilot.Attachment{
+			Type:        copilot.AttachmentTypeFile,
+			Path:        &pathCopy,
+			DisplayName: &nameCopy,
+		})
+	}
+	return strings.Join(kept, " "), attachments
+}
+
+// copyToClipboard copies text to the system clipboard.
+func copyToClipboard(text string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		pbcopyPath, err := exec.LookPath("pbcopy")
+		if err != nil {
+			return fmt.Errorf("pbcopy not found: %w", err)
+		}
+		cmd = exec.Command(pbcopyPath) // #nosec G204
+	case "windows":
+		clipPath, err := exec.LookPath("clip")
+		if err != nil {
+			return fmt.Errorf("clip not found: %w", err)
+		}
+		cmd = exec.Command(clipPath) // #nosec G204
+	default:
+		if xclipPath, err := exec.LookPath("xclip"); err == nil {
+			cmd = exec.Command(xclipPath, "-sel", "clip") // #nosec G204
+		} else if xselPath, err := exec.LookPath("xsel"); err == nil {
+			cmd = exec.Command(xselPath, "--clipboard", "--input") // #nosec G204
+		} else {
+			return fmt.Errorf("no clipboard utility found (install xclip or xsel)")
+		}
+	}
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
+}
+
+// handleShellPassthrough executes a shell command directly, bypassing the AI.
+func handleShellPassthrough(cmdStr string) {
+	cmdStr = strings.TrimSpace(cmdStr)
+	if cmdStr == "" {
+		return
+	}
+	fmt.Printf("  %s$ %s%s\n", colorDim, cmdStr, colorReset)
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmdExePath, err := exec.LookPath("cmd.exe")
+		if err != nil {
+			fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
+			return
+		}
+		cmd = exec.Command(cmdExePath, "/C", cmdStr) // #nosec G204
+	} else {
+		cmd = exec.Command("/bin/sh", "-c", cmdStr) // #nosec G204
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			fmt.Printf("  %s●%s Exit code: %d\n", colorYellow, colorReset, exitErr.ExitCode())
+		} else {
+			fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
+		}
+	}
+}
+
+// onDeltaEvent handles an incremental streaming delta from the assistant.
+func onDeltaEvent(event copilot.SessionEvent) {
+	d, ok := event.Data.(*copilot.AssistantMessageDeltaData)
+	if !ok || d.DeltaContent == "" {
+		return
+	}
+	if !streamingActive.Swap(true) {
+		// First delta: suppress spinner and clear the spinner line
+		spinnerPaused.Store(1)
+		time.Sleep(120 * time.Millisecond)
+		fmt.Printf("\r\033[K\n")
+	}
+	fmt.Print(d.DeltaContent)
+}
+
+// printUsage prints a session usage summary for the /usage command.
+func printUsage(state *agentState) {
+	elapsed := time.Since(state.sessionStart)
+	h := int(elapsed.Hours())
+	m := int(elapsed.Minutes()) % 60
+	s := int(elapsed.Seconds()) % 60
+	var dur string
+	switch {
+	case h > 0:
+		dur = fmt.Sprintf("%dh %dm %ds", h, m, s)
+	case m > 0:
+		dur = fmt.Sprintf("%dm %ds", m, s)
+	default:
+		dur = fmt.Sprintf("%ds", s)
+	}
+	fmt.Println()
+	fmt.Printf("  %s━━ Session Usage ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
+	fmt.Println()
+	fmt.Printf("  Duration:       %s\n", dur)
+	fmt.Printf("  Turns:          %d\n", state.turnCount)
+	switch {
+	case state.quotaUnlimited:
+		fmt.Printf("  Premium quota:  unlimited\n")
+	case state.quotaTotal > 0:
+		used := state.quotaUsed - state.premiumUsedAtStart
+		fmt.Printf("  Premium quota:  %.0f used this session (%.0f%% remaining)\n", used, state.quotaPercentage)
+	default:
+		fmt.Printf("  Premium quota:  not yet available (send a message first)\n")
+	}
+	if state.turnsMiniCount > 0 || state.turnsGPT4Count > 0 {
+		fmt.Printf("  Models used:    %s ×%d, %s ×%d\n",
+			modelCostEffective, state.turnsMiniCount,
+			modelPremium, state.turnsGPT4Count)
+	}
+	if state.forcedModel != "" {
+		fmt.Printf("  Model forced:   %s\n", state.forcedModel)
+	}
+	fmt.Println()
+}
+
+// handleClear resets the conversation by creating a fresh session.
+func handleClear(deps *loopDeps, ts *turnState) error {
+	newSession, err := switchToModel(deps, ts.session, ts.model)
+	if err != nil {
+		return err
+	}
+	ts.session = newSession
+	deps.state.turnCount = 0
+	deps.state.turnsMiniCount = 0
+	deps.state.turnsGPT4Count = 0
+	deps.state.sessionStart = time.Now()
+	deps.state.premiumUsedAtStart = deps.state.quotaUsed
+	fmt.Printf("  %s●%s Conversation cleared — new session started\n", colorGreen, colorReset)
+	return nil
+}
+
+// handleCompact summarises the conversation history and starts a fresh context window.
+func handleCompact(deps *loopDeps, ts *turnState) error {
+	if deps.state.turnCount == 0 {
+		fmt.Printf("  %s●%s Nothing to compact — no turns yet\n", colorYellow, colorReset)
+		return nil
+	}
+	fmt.Printf("  %s●%s Compacting conversation history...\n", colorCyan, colorReset)
+	const compactPrompt = "Summarize our entire conversation so far in 3-5 sentences, focusing on the key Kubernetes findings, issues discussed, and conclusions reached. Be factual and specific."
+	*deps.isIdle = false
+	if _, err := ts.session.Send(deps.ctx, copilot.MessageOptions{Prompt: compactPrompt}); err != nil {
+		return fmt.Errorf("failed to send compact prompt: %w", err)
+	}
+	waitForIdleWithSpinner(deps.isIdle)
+	summary := deps.state.getLastResponse()
+	prevTurns := deps.state.turnCount
+	newSession, err := switchToModel(deps, ts.session, ts.model)
+	if err != nil {
+		return err
+	}
+	ts.session = newSession
+	deps.state.turnCount = 0
+	deps.state.turnsMiniCount = 0
+	deps.state.turnsGPT4Count = 0
+	deps.state.premiumUsedAtStart = deps.state.quotaUsed
+	deps.state.sessionStart = time.Now()
+	if summary != "" {
+		contextPrompt := fmt.Sprintf("[CONTEXT FROM PREVIOUS SESSION (%d turns)]\n%s\n[END CONTEXT]", prevTurns, summary)
+		*deps.isIdle = false
+		if _, err := ts.session.Send(deps.ctx, copilot.MessageOptions{Prompt: contextPrompt}); err != nil {
+			log.Printf("Warning: failed to inject compact summary: %v", err)
+		} else {
+			waitForIdle(deps.isIdle)
+		}
+	}
+	fmt.Printf("  %s●%s Session compacted: %d turns → summary (~%d tokens)\n",
+		colorGreen, colorReset, prevTurns, estimateTokens(summary))
+	return nil
+}
+
+// handleModelCommand processes the /model command for mid-session model switching.
+// Returns (handled bool, err error).
+func handleModelCommand(deps *loopDeps, input string, ts *turnState) (bool, error) {
+	parts := strings.Fields(input)
+	if len(parts) == 1 {
+		if deps.state.forcedModel != "" {
+			fmt.Printf("  %s●%s Model override: %s%s%s (auto-routing disabled)\n",
+				colorCyan, colorReset, colorCyan, deps.state.forcedModel, colorReset)
+		} else {
+			fmt.Printf("  %s●%s Auto model routing: %s (simple) / %s (complex)\n",
+				colorCyan, colorReset, modelCostEffective, modelPremium)
+		}
+		fmt.Printf("  %s  /model <name> to override • /model reset to restore auto-routing%s\n", colorDim, colorReset)
+		return true, nil
+	}
+	if strings.ToLower(parts[1]) == "reset" {
+		deps.state.forcedModel = ""
+		fmt.Printf("  %s●%s Auto model routing restored\n", colorGreen, colorReset)
+		return true, nil
+	}
+	newModel := parts[1]
+	newSession, err := switchToModel(deps, ts.session, newModel)
+	if err != nil {
+		return true, err
+	}
+	deps.state.forcedModel = newModel
+	ts.session = newSession
+	ts.model = newModel
+	fmt.Printf("  %s●%s Model overridden: %s%s%s\n", colorGreen, colorReset, colorCyan, newModel, colorReset)
+	fmt.Printf("  %s  Use /model reset to re-enable auto-routing%s\n", colorDim, colorReset)
+	return true, nil
+}
+
+// handleContextCommand processes /context list and /context use <name> commands.
+func handleContextCommand(deps *loopDeps, input string) (bool, error) {
+	parts := strings.Fields(input)
+	if len(parts) == 1 || (len(parts) == 2 && strings.ToLower(parts[1]) == subCmdList) {
+		clusters := deps.k8sProvider.GetClusters()
+		current := deps.k8sProvider.GetCurrentContext()
+		fmt.Println()
+		fmt.Printf("  %s━━ Kubernetes Contexts ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
+		fmt.Println()
+		for _, c := range clusters {
+			if c.Context == current {
+				fmt.Printf("  %s* %-44s (current)%s\n", colorCyan, c.Context, colorReset)
+			} else {
+				fmt.Printf("    %s\n", c.Context)
+			}
+		}
+		fmt.Println()
+		return true, nil
+	}
+	if len(parts) >= 3 && strings.ToLower(parts[1]) == "use" {
+		newCtx := parts[2]
+		oldCtx := deps.k8sProvider.GetCurrentContext()
+		if err := deps.k8sProvider.SetCurrentContext(newCtx); err != nil {
+			fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
+			return true, nil
+		}
+		fmt.Printf("  %s●%s Active context: %s%s%s → %s%s%s\n",
+			colorGreen, colorReset,
+			colorDim, oldCtx, colorReset,
+			colorCyan, newCtx, colorReset)
+		return true, nil
+	}
+	fmt.Printf("  %s●%s Usage: /context list  or  /context use <name>\n", colorRed, colorReset)
+	return true, nil
+}
+
+// handleLast prints the last assistant response to stdout.
+func handleLast(state *agentState) (bool, error) {
+	last := state.getLastResponse()
+	if last == "" {
+		fmt.Printf("  %s●%s No previous response to show\n", colorDim, colorReset)
+	} else {
+		fmt.Println()
+		fmt.Println(last)
+	}
+	return true, nil
+}
+
+// handleCopy copies the last assistant response to the system clipboard.
+func handleCopy(state *agentState) (bool, error) {
+	last := state.getLastResponse()
+	if last == "" {
+		fmt.Printf("  %s●%s Nothing to copy yet\n", colorDim, colorReset)
+		return true, nil
+	}
+	if err := copyToClipboard(last); err != nil {
+		fmt.Printf(fmtErrorBullet, colorRed, colorReset, err)
+		return true, nil
+	}
+	fmt.Printf("  %s●%s Copied to clipboard (%d characters)\n",
+		colorGreen, colorReset, len(last))
+	return true, nil
+}
+
+// handleStreamer toggles or sets streamer mode (on/off).
+func handleStreamer(state *agentState, input string) (bool, error) {
+	parts := strings.Fields(input)
+	if len(parts) >= 2 {
+		switch strings.ToLower(parts[1]) {
+		case "on":
+			state.streamerMode = true
+		case "off":
+			state.streamerMode = false
+		default:
+			fmt.Printf("  %s●%s Usage: /streamer [on|off]\n", colorRed, colorReset)
+			return true, nil
+		}
+	} else {
+		state.streamerMode = !state.streamerMode
+	}
+	if state.streamerMode {
+		fmt.Printf("  %s●%s Streamer mode on — quota info hidden\n", colorGreen, colorReset)
+	} else {
+		fmt.Printf("  %s●%s Streamer mode off\n", colorGreen, colorReset)
+	}
+	return true, nil
+}
+
+// dispatchUXCommand handles the new UX-related slash commands introduced in this release.
+// Returns (handled bool, err error).
+func dispatchUXCommand(deps *loopDeps, input string, ts *turnState) (bool, error) {
+	lower := strings.TrimSpace(strings.ToLower(input))
+	switch {
+	case lower == "/clear" || lower == "/new":
+		return true, handleClear(deps, ts)
+	case lower == "/usage":
+		printUsage(deps.state)
+		return true, nil
+	case lower == "/compact":
+		return true, handleCompact(deps, ts)
+	case lower == "/last":
+		return handleLast(deps.state)
+	case lower == "/copy":
+		return handleCopy(deps.state)
+	case lower == "/streamer" || strings.HasPrefix(lower, "/streamer "):
+		return handleStreamer(deps.state, input)
+	case strings.HasPrefix(lower, "/model"):
+		return handleModelCommand(deps, input, ts)
+	case strings.HasPrefix(lower, "/context"):
+		return handleContextCommand(deps, input)
+	}
+	return false, nil
 }
 
 // interactiveLoopWithModelSelection handles interactive conversation with dynamic model selection.

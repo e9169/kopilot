@@ -50,9 +50,9 @@ func TestSelectModelForQuery(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := selectModelForQuery(tt.query, AgentDefault)
+			result := selectModelForQuery(tt.query, AgentDefault, "")
 			if result != tt.expectedModel {
-				t.Errorf("selectModelForQuery(%q, AgentDefault) = %q, want %q", tt.query, result, tt.expectedModel)
+				t.Errorf("selectModelForQuery(%q, AgentDefault, \"\") = %q, want %q", tt.query, result, tt.expectedModel)
 			}
 		})
 	}
@@ -78,7 +78,7 @@ func TestSpecialistAgentsAlwaysUsePremiumModel(t *testing.T) {
 	for _, agent := range specialistAgents {
 		for _, query := range queries {
 			t.Run(fmt.Sprintf("%s/%s", agent, query), func(t *testing.T) {
-				result := selectModelForQuery(query, agent)
+				result := selectModelForQuery(query, agent, "")
 				if result != modelPremium {
 					t.Errorf("selectModelForQuery(%q, %q) = %q, want %q", query, agent, result, modelPremium)
 				}
@@ -89,11 +89,11 @@ func TestSpecialistAgentsAlwaysUsePremiumModel(t *testing.T) {
 
 func TestModelConstants(t *testing.T) {
 	// Verify the constants have expected values
-	if modelCostEffective != "gpt-4o-mini" {
-		t.Errorf("modelCostEffective = %q, want %q", modelCostEffective, "gpt-4o-mini")
+	if modelCostEffective != "gpt-4.1" {
+		t.Errorf("modelCostEffective = %q, want %q", modelCostEffective, "gpt-4.1")
 	}
 
-	if modelPremium != "gpt-4o" {
-		t.Errorf("modelPremium = %q, want %q", modelPremium, "gpt-4o")
+	if modelPremium != "claude-sonnet-4.6" {
+		t.Errorf("modelPremium = %q, want %q", modelPremium, "claude-sonnet-4.6")
 	}
 }

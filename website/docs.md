@@ -70,8 +70,8 @@ Kopilot works with **any model available through your GitHub Copilot subscriptio
 
 **Default configuration:**
 
-- **Cost-effective model** (default: gpt-4o-mini) - Used for simple queries and status checks
-- **Premium model** (default: gpt-4o) - Automatically selected for troubleshooting and complex operations
+- **Cost-effective model** (default: gpt-4.1) - Used for simple queries and status checks
+- **Premium model** (default: claude-sonnet-4.6) - Automatically selected for troubleshooting and complex operations
 
 **Customization:**
 
@@ -86,7 +86,7 @@ export KOPILOT_MODEL_PREMIUM="o1-preview"
 ./bin/kopilot
 ```
 
-Kopilot supports any model available in your GitHub Copilot plan, including: `gpt-4o`, `gpt-4o-mini`, `o1-preview`, `o1-mini`, `claude-3.5-sonnet`, and others.
+Kopilot supports any model available in your GitHub Copilot plan, including: `gpt-4.1`, `claude-sonnet-4.6`, `claude-haiku-4.5`, `gpt-5-mini`, and others.
 
 No API key configuration needed - authentication is handled through GitHub Copilot CLI.
 
@@ -180,14 +180,14 @@ Get AI-powered help with:
 
 Kopilot provides two safety modes:
 
-#### 🔒 Read-Only Mode (Default)
+#### 🔒 Read-Only Mode
 
 - Blocks all write operations for maximum safety
 - Allows monitoring, querying, and troubleshooting
 - Best for production environments
 - No risk of accidental changes
 
-#### 🔓 Interactive Mode
+#### 🔓 Interactive Mode (Write Operations)
 
 - Enables write operations with confirmation
 - Shows exact command before execution
@@ -248,8 +248,8 @@ See the [Agents documentation](https://github.com/e9169/kopilot/blob/main/docs/A
 
 Kopilot automatically selects the optimal model based on your query:
 
-- **Simple queries** (list, status, health) → Cost-effective model (default: gpt-4o-mini)
-- **Complex operations** (troubleshooting, scaling, debugging) → Premium model (default: gpt-4o)
+- **Simple queries** (list, status, health) → Cost-effective model (default: gpt-4.1)
+- **Complex operations** (troubleshooting, scaling, debugging) → Premium model (default: claude-sonnet-4.6)
 
 This provides 50-70% cost reduction while maintaining quality for critical tasks. You can customize which models are used via environment variables.
 
