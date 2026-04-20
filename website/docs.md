@@ -292,11 +292,17 @@ Kopilot supports connecting to external [Model Context Protocol (MCP)](https://m
 kopilot --mcp-config ~/.kopilot/mcp.json
 ```
 
-The config file is a JSON object mapping server names to their URLs:
+The config file is a JSON object with a `servers` array. Each server entry must include `name`, `type`, and `url`:
 
 ```json
 {
-  "my-server": "http://localhost:8080/mcp"
+  "servers": [
+    {
+      "name": "my-server",
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
+    }
+  ]
 }
 ```
 
