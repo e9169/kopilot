@@ -153,7 +153,7 @@ You can switch modes during a session without restarting:
 All commands available at the `❯` prompt:
 
 | Command | Description |
-|---|---|
+| ------- | ----------- |
 | `/help` | Show all available commands |
 | `/clear`, `/new` | Start a fresh conversation |
 | `/usage` | Show session duration, turns, and quota |
