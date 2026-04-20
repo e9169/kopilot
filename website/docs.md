@@ -90,6 +90,22 @@ Kopilot supports any model available in your GitHub Copilot plan, including: `gp
 
 No API key configuration needed - authentication is handled through GitHub Copilot CLI.
 
+### CLI Flags
+
+```text
+kopilot [flags]
+
+Flags:
+  --interactive       Enable interactive mode (prompts before write operations)
+  --agent <name>      Start with a specialist agent persona (default, debugger, security, optimizer, gitops, sanitizer)
+  --context <name>    Override the active kubeconfig context
+  --kubeconfig <path> Path to kubeconfig file (default: $KUBECONFIG or ~/.kube/config)
+  --output <format>   Output format: text (default) or json
+  --mcp-config <path> Path to MCP server config file (default: ~/.kopilot/mcp.json)
+  --version           Print version information
+  -v, --verbose       Enable verbose logging
+```
+
 ---
 
 ## Basic Usage
@@ -129,8 +145,45 @@ You can switch modes during a session without restarting:
 ```text
 ❯ /readonly          # Switch to read-only mode
 ❯ /interactive       # Switch to interactive mode
-❯ /mode             # Show current mode
+❯ /mode              # Show current mode
 ```
+
+### Runtime Command Reference
+
+All commands available at the `❯` prompt:
+
+| Command | Description |
+| ------- | ----------- |
+| `/help` | Show all available commands |
+| `/clear`, `/new` | Start a fresh conversation |
+| `/usage` | Show session duration, turns, and quota |
+| `/compact` | Summarize history to save context window |
+| `/last` | Re-show the last full response |
+| `/copy` | Copy the last response to clipboard |
+| `/mode`, `/status` | Show current execution mode |
+| `/readonly` | Switch to read-only mode |
+| `/interactive` | Switch to interactive mode |
+| `/model` | Show current model or routing mode |
+| `/model <name>` | Force a specific model for this session |
+| `/model reset` | Re-enable automatic model routing |
+| `/streamer [on\|off]` | Hide quota badge (useful for screen-sharing) |
+| `/context list` | List all kubeconfig contexts |
+| `/context use <name>` | Switch active context |
+| `/agent` | Show active agent and available roster |
+| `/agent list` | Same as `/agent` |
+| `/agent <name>` | Switch specialist agent |
+| `/mcp list` | List configured MCP servers |
+| `/mcp add <name> <url>` | Add or update an MCP server |
+| `/mcp delete <name>` | Remove an MCP server |
+
+**Shortcuts:**
+
+| Shortcut | Description |
+| -------- | ----------- |
+| `@<filepath>` | Attach a file to the next message |
+| `!<command>` | Run a shell command without AI |
+| `Ctrl+C` | Cancel current input or abort AI response |
+| `Ctrl+D` | Exit Kopilot |
 
 ### Example Session
 
@@ -194,20 +247,11 @@ Kopilot provides two safety modes:
 - Requires explicit approval (yes/no)
 - Can be started with `--interactive` flag or switched at runtime with `/interactive`
 
-#### Runtime Commands
-
-- `/help` - Show all available commands
-- `/readonly` - Switch to read-only mode
-- `/interactive` - Switch to interactive mode
-- `/mode` - Show current execution mode
-- `/agent` or `/agent list` - Show active agent and roster
-- `/agent <name>` - Switch specialist agent
-
 See the [Execution Modes documentation](https://github.com/e9169/kopilot/blob/main/docs/EXECUTION_MODES.md) for detailed information
 
 ### 🎭 Specialist Agent Personas
 
-Kopilot ships four domain-focused AI personas that sharpen the assistant for specific operational areas. Start with `--agent <name>` or switch mid-session with `/agent <name>`.
+Kopilot ships five domain-focused AI personas that sharpen the assistant for specific operational areas. Start with `--agent <name>` or switch mid-session with `/agent <name>`.
 
 **🔍 Debugger** (`--agent debugger`)
 Root cause analysis, log correlation, and pod failure diagnosis. Starts with events and recent changes, correlates pod status and logs, traces failure chains.
@@ -229,9 +273,64 @@ Flux and ArgoCD sync status, drift detection, and reconciliation diagnostics. Al
 
 - *Try: "Are all Flux Kustomizations synced?" / "Find resources modified outside of GitOps"*
 
+**🧹 Sanitizer** (`--agent sanitizer`)
+Workload linting, best-practice scoring, and cluster health grading. Scores workloads against rules covering probes, resource limits, image tags, replica counts, and container hygiene. Produces an A–F grade with prioritised remediation steps.
+
+- *Try: "Sanitize my cluster and give me a grade" / "Which workloads are missing health probes?"*
+
 All specialist agents always use the premium model for the best reasoning quality. Agents and execution modes are independent — read-only protection is always enforced regardless of active agent.
 
 See the [Agents documentation](https://github.com/e9169/kopilot/blob/main/docs/AGENTS.md) for full details.
+
+### 🔌 MCP Servers
+
+Kopilot supports connecting to external [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers, allowing it to call tools from any MCP-compatible service.
+
+**Configure at startup:**
+
+```bash
+kopilot --mcp-config ~/.kopilot/mcp.json
+```
+
+The config file is a JSON object with a `servers` array. Each server entry must include `name`, `type`, and `url`:
+
+```json
+{
+  "servers": [
+    {
+      "name": "my-server",
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
+    }
+  ]
+}
+```
+
+**Manage servers at runtime:**
+
+```text
+❯ /mcp list                          # list configured servers
+❯ /mcp add my-server http://host/mcp # add or update a server
+❯ /mcp delete my-server              # remove a server
+```
+
+Changes take effect immediately — no restart required.
+
+### 📎 File Attachments and Shell Shortcuts
+
+Attach files directly to a message using the `@` prefix:
+
+```text
+❯ @deployment.yaml what's wrong with this deployment?
+❯ @logs.txt summarize these error logs
+```
+
+Run shell commands without involving AI using `!`:
+
+```text
+❯ !kubectl get pods -A
+❯ !helm list
+```
 
 ### 🔐 Security
 

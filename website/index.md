@@ -102,7 +102,7 @@ kopilot
   <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #06b6d4, #8b5cf6) border-box; border-radius: 0.5rem;">
     <div style="font-size: 3rem; margin-bottom: 0.5rem;">🎭</div>
     <h3 style="background: linear-gradient(135deg, #06b6d4, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Specialist Agents</h3>
-    <p>Four domain-focused AI personas: <strong>Debugger</strong> 🔍 for root cause analysis, <strong>Security</strong> 🛡️ for RBAC &amp; privilege audits, <strong>Optimizer</strong> ⚡ for resource right-sizing, and <strong>GitOps</strong> 🔄 for Flux/ArgoCD sync. Switch at runtime with <code>/agent &lt;name&gt;</code>.</p>
+    <p>Five domain-focused AI personas: <strong>Debugger</strong> 🔍 for root cause analysis, <strong>Security</strong> 🛡️ for RBAC &amp; privilege audits, <strong>Optimizer</strong> ⚡ for resource right-sizing, <strong>GitOps</strong> 🔄 for Flux/ArgoCD sync, and <strong>Sanitizer</strong> 🧹 for best-practice scoring and cluster grading. Switch at runtime with <code>/agent &lt;name&gt;</code>.</p>
   </div>
   
   <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #06b6d4, #ec4899) border-box; border-radius: 0.5rem;">
@@ -121,6 +121,18 @@ kopilot
     <div style="font-size: 3rem; margin-bottom: 0.5rem;">💡</div>
     <h3 style="background: linear-gradient(135deg, #8b5cf6, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Smart Suggestions</h3>
     <p>3 random example prompts shown on each launch to help you discover capabilities and get started quickly.</p>
+  </div>
+
+  <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #06b6d4, #14b8a6) border-box; border-radius: 0.5rem;">
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🔌</div>
+    <h3 style="background: linear-gradient(135deg, #06b6d4, #22d3ee); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">MCP Servers</h3>
+    <p>Connect to any <a href="https://modelcontextprotocol.io" style="color: #06b6d4;">Model Context Protocol</a> server to extend Kopilot with custom tools. Add, remove, and list servers at runtime with <code>/mcp</code>.</p>
+  </div>
+
+  <div style="padding: 1.5rem; border: 2px solid transparent; background: linear-gradient(#0a1628, #0a1628) padding-box, linear-gradient(135deg, #8b5cf6, #ec4899) border-box; border-radius: 0.5rem;">
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">📎</div>
+    <h3 style="background: linear-gradient(135deg, #8b5cf6, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">File Attachments &amp; Shell</h3>
+    <p>Attach local files to your message with <code>@&lt;file&gt;</code> for AI analysis, or run shell commands directly with <code>!&lt;command&gt;</code> — no context switching needed.</p>
   </div>
 </div>
 
