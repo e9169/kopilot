@@ -1661,33 +1661,62 @@ func printLongRunningWarning(agentType AgentType) {
 }
 
 // sendToModel selects the best model for the query and sends it, updating ts as needed.
+// printAttachments logs attachment info for non-JSON output.
+func printAttachments(attachments []copilot.Attachment, outputFormat OutputFormat) {
+	if isJSONOutput(outputFormat) {
+		return
+	}
+	for _, a := range attachments {
+		if a.Path == nil {
+			continue
+		}
+		fi, err := os.Stat(*a.Path)
+		if err != nil {
+			continue
+		}
+		dname := ""
+		if a.DisplayName != nil {
+			dname = *a.DisplayName
+		}
+		fmt.Printf("  %s📎 Attached: %s (%s)%s\n", colorCyan, dname, formatBytes(fi.Size()), colorReset)
+	}
+}
+
+// maybeSwapModel switches the session to the optimal model if it differs from the current one.
+func maybeSwapModel(deps *loopDeps, ts *turnState, prompt string) error {
+	optimalModel := selectModelForQuery(prompt, deps.state.selectedAgent, deps.state.forcedModel)
+	if optimalModel == ts.model {
+		return nil
+	}
+	newSession, err := switchToModel(deps, ts.session, optimalModel)
+	if err != nil {
+		return err
+	}
+	ts.session = newSession
+	ts.model = optimalModel
+	return nil
+}
+
+// trackTurnModelUsage increments per-turn counters based on the model used.
+func trackTurnModelUsage(state *agentState, model string) {
+	state.turnCount++
+	if model == modelCostEffective {
+		state.turnsMiniCount++
+	} else {
+		state.turnsGPT4Count++
+	}
+}
+
 func sendToModel(deps *loopDeps, ts *turnState, input string) error {
 	// @ file attachment injection
 	prompt, attachments := extractAttachments(input)
-	if len(attachments) > 0 && !isJSONOutput(deps.state.outputFormat) {
-		for _, a := range attachments {
-			if a.Path != nil {
-				if fi, err := os.Stat(*a.Path); err == nil {
-					dname := ""
-					if a.DisplayName != nil {
-						dname = *a.DisplayName
-					}
-					fmt.Printf("  %s📎 Attached: %s (%s)%s\n", colorCyan, dname, formatBytes(fi.Size()), colorReset)
-				}
-			}
-		}
-	}
+	printAttachments(attachments, deps.state.outputFormat)
 	if prompt == "" {
 		prompt = input // fallback if all tokens were attachments
 	}
 
-	if optimalModel := selectModelForQuery(prompt, deps.state.selectedAgent, deps.state.forcedModel); optimalModel != ts.model {
-		newSession, err := switchToModel(deps, ts.session, optimalModel)
-		if err != nil {
-			return err
-		}
-		ts.session = newSession
-		ts.model = optimalModel
+	if err := maybeSwapModel(deps, ts, prompt); err != nil {
+		return err
 	}
 	if !isJSONOutput(deps.state.outputFormat) && isLongRunningQuery(prompt, deps.state.selectedAgent) {
 		printLongRunningWarning(deps.state.selectedAgent)
@@ -1707,13 +1736,7 @@ func sendToModel(deps *loopDeps, ts *turnState, input string) error {
 		deps.state.setAbortCurrentTurn(nil)
 		return fmt.Errorf("failed to send message: %w", err)
 	}
-	// Track per-turn model usage
-	deps.state.turnCount++
-	if ts.model == modelCostEffective {
-		deps.state.turnsMiniCount++
-	} else {
-		deps.state.turnsGPT4Count++
-	}
+	trackTurnModelUsage(deps.state, ts.model)
 	return nil
 }
 
@@ -1896,11 +1919,14 @@ func printUsage(state *agentState) {
 	fmt.Println()
 	fmt.Printf("  Duration:       %s\n", dur)
 	fmt.Printf("  Turns:          %d\n", state.turnCount)
-	if !state.quotaUnlimited && state.quotaTotal > 0 {
+	switch {
+	case state.quotaUnlimited:
+		fmt.Printf("  Premium quota:  unlimited\n")
+	case state.quotaTotal > 0:
 		used := state.quotaUsed - state.premiumUsedAtStart
 		fmt.Printf("  Premium quota:  %.0f used this session (%.0f%% remaining)\n", used, state.quotaPercentage)
-	} else {
-		fmt.Printf("  Premium quota:  unlimited\n")
+	default:
+		fmt.Printf("  Premium quota:  not yet available (send a message first)\n")
 	}
 	if state.turnsMiniCount > 0 || state.turnsGPT4Count > 0 {
 		fmt.Printf("  Models used:    %s ×%d, %s ×%d\n",

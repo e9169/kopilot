@@ -180,14 +180,14 @@ Get AI-powered help with:
 
 Kopilot provides two safety modes:
 
-#### 🔒 Read-Only Mode (Default)
+#### 🔒 Read-Only Mode
 
 - Blocks all write operations for maximum safety
 - Allows monitoring, querying, and troubleshooting
 - Best for production environments
 - No risk of accidental changes
 
-#### 🔓 Interactive Mode
+#### 🔓 Interactive Mode (Write Operations)
 
 - Enables write operations with confirmation
 - Shows exact command before execution
