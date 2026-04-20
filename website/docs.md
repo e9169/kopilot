@@ -179,7 +179,7 @@ All commands available at the `❯` prompt:
 **Shortcuts:**
 
 | Shortcut | Description |
-|---|---|
+| -------- | ----------- |
 | `@<filepath>` | Attach a file to the next message |
 | `!<command>` | Run a shell command without AI |
 | `Ctrl+C` | Cancel current input or abort AI response |
