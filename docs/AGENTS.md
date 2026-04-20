@@ -164,9 +164,9 @@ kopilot --help
 
 ## Model Selection and Agents
 
-All specialist agents (`debugger`, `security`, `optimizer`, `gitops`) always use the **premium model** (`gpt-4o` by default), regardless of how simple the query appears. This is because specialist reasoning benefits from higher model capacity — even a simple "list all pods" query issued through the Debugger agent may require deep context to give a meaningful diagnosis.
+All specialist agents (`debugger`, `security`, `optimizer`, `gitops`) always use the **premium model** (`claude-sonnet-4.6` by default), regardless of how simple the query appears. This is because specialist reasoning benefits from higher model capacity — even a simple "list all pods" query issued through the Debugger agent may require deep context to give a meaningful diagnosis.
 
-The `default` agent uses intelligent model selection: cost-effective (`gpt-4o-mini`) for simple queries and premium for troubleshooting and complex operations. See [MODEL_SELECTION.md](MODEL_SELECTION.md) for details.
+The `default` agent uses intelligent model selection: cost-effective (`gpt-4.1`) for simple queries and premium for troubleshooting and complex operations. See [MODEL_SELECTION.md](MODEL_SELECTION.md) for details.
 
 | Agent | Model strategy |
 | ------- | --------------- |

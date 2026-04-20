@@ -398,8 +398,8 @@ func ParseAgentType(s string) (AgentType, error) {
 
 const (
 	// Default model selection constants
-	defaultModelCostEffective = "gpt-4o-mini" // Cost-effective model for simple queries
-	defaultModelPremium       = "gpt-4o"      // Premium model for complex tasks
+	defaultModelCostEffective = "gpt-4.1"           // Cost-effective model for simple queries
+	defaultModelPremium       = "claude-sonnet-4.6" // Premium model for complex tasks
 
 	// ANSI color codes
 	colorReset     = "\033[0m"
@@ -618,19 +618,23 @@ const maxDisplayLines = 30
 // When streaming was active the content was already printed incrementally;
 // this function only stores it and closes the streaming state in that case.
 func onMessageEvent(event copilot.SessionEvent, state *agentState) {
+	d, ok := event.Data.(*copilot.AssistantMessageData)
+	if !ok {
+		return
+	}
 	if streamingActive.Swap(false) {
 		// Content was already streamed incrementally — just finalise
 		fmt.Println()
 		spinnerPaused.Store(0)
-		if event.Data.Content != nil {
-			state.setLastResponse(*event.Data.Content)
+		if d.Content != "" {
+			state.setLastResponse(d.Content)
 		}
 		return
 	}
-	if event.Data.Content == nil || *event.Data.Content == "" {
+	if d.Content == "" {
 		return
 	}
-	content := *event.Data.Content
+	content := d.Content
 	state.setLastResponse(content)
 	fmt.Println()
 	lines := strings.Split(content, "\n")
@@ -648,32 +652,32 @@ func onMessageEvent(event copilot.SessionEvent, state *agentState) {
 
 // onSessionErrorEvent prints errors from session.error events to the user.
 func onSessionErrorEvent(event copilot.SessionEvent) {
-	d := event.Data
+	d, ok := event.Data.(*copilot.SessionErrorData)
+	if !ok {
+		return
+	}
 	msg := "(unknown session error)"
-	if d.Message != nil && *d.Message != "" {
-		msg = *d.Message
+	if d.Message != "" {
+		msg = d.Message
 	}
 	code := ""
 	if d.StatusCode != nil {
 		code = fmt.Sprintf(" [status %d]", *d.StatusCode)
 	}
 	errType := ""
-	if d.ErrorType != nil && *d.ErrorType != "" {
-		errType = fmt.Sprintf(" [%s]", *d.ErrorType)
+	if d.ErrorType != "" {
+		errType = fmt.Sprintf(" [%s]", d.ErrorType)
 	}
-	reason := ""
-	if d.ErrorReason != nil && *d.ErrorReason != "" {
-		reason = fmt.Sprintf(" (reason: %s)", *d.ErrorReason)
-	}
-	fmt.Fprintf(os.Stderr, "Error%s%s: %s%s\n", code, errType, msg, reason)
+	fmt.Fprintf(os.Stderr, "Error%s%s: %s\n", code, errType, msg)
 }
 
 // onUsageEvent records quota information from usage snapshots.
 func onUsageEvent(event copilot.SessionEvent, state *agentState) {
-	if event.Data.QuotaSnapshots == nil {
+	d, ok := event.Data.(*copilot.AssistantUsageData)
+	if !ok || d.QuotaSnapshots == nil {
 		return
 	}
-	snapshot, exists := event.Data.QuotaSnapshots["premium_interactions"]
+	snapshot, exists := d.QuotaSnapshots["premium_interactions"]
 	if exists && snapshot.RemainingPercentage >= 0 {
 		state.quotaPercentage = snapshot.RemainingPercentage
 		state.quotaUnlimited = snapshot.IsUnlimitedEntitlement
@@ -688,7 +692,7 @@ func setupSessionEventHandler(session *copilot.Session, isIdlePtr *bool, state *
 		switch event.Type {
 		case "assistant.message":
 			onMessageEvent(event, state)
-		case "assistant.message.delta":
+		case "assistant.message_delta":
 			onDeltaEvent(event)
 		case "session.error":
 			onSessionErrorEvent(event)
@@ -1859,7 +1863,8 @@ func handleShellPassthrough(cmdStr string) {
 
 // onDeltaEvent handles an incremental streaming delta from the assistant.
 func onDeltaEvent(event copilot.SessionEvent) {
-	if event.Data.DeltaContent == nil || *event.Data.DeltaContent == "" {
+	d, ok := event.Data.(*copilot.AssistantMessageDeltaData)
+	if !ok || d.DeltaContent == "" {
 		return
 	}
 	if !streamingActive.Swap(true) {
@@ -1868,7 +1873,7 @@ func onDeltaEvent(event copilot.SessionEvent) {
 		time.Sleep(120 * time.Millisecond)
 		fmt.Printf("\r\033[K\n")
 	}
-	fmt.Print(*event.Data.DeltaContent)
+	fmt.Print(d.DeltaContent)
 }
 
 // printUsage prints a session usage summary for the /usage command.
