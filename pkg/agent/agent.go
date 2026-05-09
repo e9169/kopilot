@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -48,6 +49,11 @@ const (
 	OutputText OutputFormat = "text"
 	// OutputJSON returns JSON output
 	OutputJSON OutputFormat = "json"
+)
+
+const (
+	maxAttachmentFileSize  = 512 * 1024      // 512 KB per file
+	maxAttachmentTotalSize = 1 * 1024 * 1024 // 1 MB cumulative
 )
 
 // AgentType defines the specialized agent persona
@@ -1682,13 +1688,7 @@ func sendToModel(deps *loopDeps, ts *turnState, input string) error {
 	if len(attachments) > 0 {
 		var b strings.Builder
 		b.WriteString(prompt)
-		b.WriteString("\n\nAttached files:\n")
-		for _, path := range attachments {
-			content, err := os.ReadFile(path)
-			if err == nil {
-				b.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", filepath.Base(path), string(content)))
-			}
-		}
+		b.WriteString(buildAttachmentContent(attachments, deps.state.outputFormat))
 		prompt = b.String()
 	}
 
@@ -1750,6 +1750,47 @@ func formatBytes(n int64) string {
 // estimateTokens returns a rough token count estimate (1 token ≈ 4 chars).
 func estimateTokens(text string) int {
 	return len(text) / 4
+}
+
+// buildAttachmentContent reads each attachment and returns the combined text to
+// append to the prompt. Files that are too large, exceed the cumulative limit,
+// or contain binary content are skipped with a user-facing warning.
+func buildAttachmentContent(paths []string, outputFormat OutputFormat) string {
+	var b strings.Builder
+	b.WriteString("\n\nAttached files:\n")
+	var totalBytes int64
+	for _, path := range paths {
+		name := filepath.Base(path)
+		fi, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		if fi.Size() > maxAttachmentFileSize {
+			if !isJSONOutput(outputFormat) {
+				fmt.Printf("  ⚠️  Skipped %s: file too large (%s, limit 512 KB)\n", name, formatBytes(fi.Size()))
+			}
+			continue
+		}
+		if totalBytes+fi.Size() > maxAttachmentTotalSize {
+			if !isJSONOutput(outputFormat) {
+				fmt.Printf("  ⚠️  Skipped %s: total attachment limit reached (1 MB)\n", name)
+			}
+			continue
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if bytes.IndexByte(content, 0) >= 0 {
+			if !isJSONOutput(outputFormat) {
+				fmt.Printf("  ⚠️  Skipped %s: binary file not supported for inline injection\n", name)
+			}
+			continue
+		}
+		totalBytes += fi.Size()
+		b.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", name, string(content)))
+	}
+	return b.String()
 }
 
 // extractAttachments parses @<filepath> tokens from the input string.
