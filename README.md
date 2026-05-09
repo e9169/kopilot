@@ -355,6 +355,10 @@ KUBECONFIG=/path/to/kubeconfig ./bin/kopilot
 - `KOPILOT_MODEL_COST_EFFECTIVE` - Override AI model for simple queries (default: `gpt-4.1`)
 - `KOPILOT_MODEL_PREMIUM` - Override AI model for complex operations (default: `claude-sonnet-4.6`)
 
+**Optional - Execution:**
+
+- `KOPILOT_KUBECTL_TIMEOUT` - Timeout for kubectl commands, e.g. `60s`, `2m` (default: `30s`). Invalid values fall back to the default.
+
 **Example:**
 
 ```bash

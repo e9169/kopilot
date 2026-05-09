@@ -708,17 +708,34 @@ func printExecutionHeader(state *agentState, isReadOnly bool, fullCommand string
 
 var runKubectlCommandFunc = runKubectlCommand
 
+// kubectlTimeout returns the effective kubectl execution timeout.
+// KOPILOT_KUBECTL_TIMEOUT accepts any value parseable by time.ParseDuration
+// (e.g. "60s", "2m"). Invalid or absent values fall back to 30s.
+func kubectlTimeout() time.Duration {
+	const defaultTimeout = 30 * time.Second
+	v := os.Getenv("KOPILOT_KUBECTL_TIMEOUT")
+	if v == "" {
+		return defaultTimeout
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return defaultTimeout
+	}
+	return d
+}
+
 func runKubectlCommand(cmdArgs []string) ([]byte, error) {
 	kubectlPath, err := exec.LookPath("kubectl")
 	if err != nil {
 		return nil, fmt.Errorf("kubectl not found in PATH: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	timeout := kubectlTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, kubectlPath, cmdArgs...)
 	out, execErr := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
-		return out, fmt.Errorf("kubectl command timed out after 30s")
+		return out, fmt.Errorf("kubectl command timed out after %s", timeout)
 	}
 	return out, execErr
 }
