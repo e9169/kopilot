@@ -558,7 +558,7 @@ Use this template after each package:
 
 ## Ready To Execute Checklist
 
-- [ ] Baseline tests pass
+- [x] Baseline tests pass
 - [x] WP-01 complete
 - [x] WP-02 complete
 - [x] WP-03 complete
