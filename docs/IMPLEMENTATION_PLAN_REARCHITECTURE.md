@@ -460,7 +460,7 @@ Use this template after each package:
 
 - Package id: WP-01 Event Type Alignment
 - Date: 2026-04-28
-- Commit sha: pending
+- Commit sha: d7545e4
 - Files changed:
 	- pkg/agent/agent.go
 - Acceptance criteria status: passed
@@ -474,7 +474,7 @@ Use this template after each package:
 
 - Package id: WP-02 MCP Server Config Propagation
 - Date: 2026-04-28
-- Commit sha: pending
+- Commit sha: 7022ab2
 - Files changed:
 	- pkg/llm/copilot/provider.go
 	- pkg/llm/copilot/provider_test.go
@@ -490,7 +490,7 @@ Use this template after each package:
 
 - Package id: WP-03 Kubectl Validation Enforcement
 - Date: 2026-05-09
-- Commit sha: pending
+- Commit sha: c6e314c
 - Files changed:
 	- pkg/agent/tools.go
 	- pkg/agent/validation_test.go
@@ -506,15 +506,65 @@ Use this template after each package:
 - Follow-up required:
 	- None
 
+- Package id: WP-04 OpenAI Streaming Tool Call Panic Guard
+- Date: 2026-05-09
+- Commit sha: 32a9bf2
+- Files changed:
+	- pkg/llm/openai/provider.go
+	- pkg/llm/openai/provider_test.go
+- Acceptance criteria status: passed
+- Verification commands run:
+	- go test ./pkg/llm
+- Notes:
+	- Extracted mergeToolCallChunk helper; nil Index check at entry returns toolCalls unchanged, eliminating the nil-pointer dereference.
+	- Normal chunk accumulation (ID, Type, Name, Arguments) preserved identically.
+	- Unit tests cover nil-index drop, slice expansion to correct length, and argument concatenation across fragments.
+- Follow-up required:
+	- None
+
+- Package id: WP-05 Attachment Safety Limits
+- Date: 2026-05-09
+- Commit sha: 0cfca17
+- Files changed:
+	- pkg/agent/agent.go
+	- pkg/agent/agent_test.go
+- Acceptance criteria status: passed
+- Verification commands run:
+	- go test ./pkg/agent
+- Notes:
+	- Added maxAttachmentFileSize (512 KB) and maxAttachmentTotalSize (1 MB) constants.
+	- buildAttachmentContent helper enforces both limits and rejects files containing null bytes (binary detection).
+	- Warnings printed only in text output mode, consistent with rest of codebase.
+	- Four unit tests: small text included, binary excluded, large file excluded, cumulative limit (three 400 KB files, third excluded).
+- Follow-up required:
+	- None
+
+- Package id: WP-06 Timeout Configurability
+- Date: 2026-05-09
+- Commit sha: 74433cc
+- Files changed:
+	- pkg/agent/tools.go
+	- README.md
+- Acceptance criteria status: passed
+- Verification commands run:
+	- go test ./pkg/agent ./...
+- Notes:
+	- kubectlTimeout() reads KOPILOT_KUBECTL_TIMEOUT via time.ParseDuration; invalid or absent values return 30s default.
+	- Timeout string reflected in the deadline-exceeded error message.
+	- Four unit tests: default when unset, custom valid duration, invalid value fallback, negative value fallback.
+	- README environment section updated with KOPILOT_KUBECTL_TIMEOUT documentation.
+- Follow-up required:
+	- None
+
 ## Ready To Execute Checklist
 
 - [ ] Baseline tests pass
 - [x] WP-01 complete
 - [x] WP-02 complete
 - [x] WP-03 complete
-- [ ] WP-04 complete
-- [ ] WP-05 complete
-- [ ] WP-06 complete
+- [x] WP-04 complete
+- [x] WP-05 complete
+- [x] WP-06 complete
 - [ ] WP-07 complete
 - [ ] WP-08 complete
 - [ ] WP-09 complete
