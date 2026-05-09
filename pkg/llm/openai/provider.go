@@ -187,28 +187,8 @@ func (s *Session) runCompletionLoop(ctx context.Context) {
 						s.emit(llm.Event{Type: llm.EventDelta, Data: &llm.DeltaData{Content: delta.Content}})
 					}
 					
-					for _, tc := range delta.ToolCalls {
-						// Expand toolCalls slice if needed
-						for len(toolCalls) <= *tc.Index {
-							toolCalls = append(toolCalls, goopenai.ToolCall{})
-						}
-						// Merge tool call chunks
-						if tc.ID != "" {
-							toolCalls[*tc.Index].ID = tc.ID
-						}
-						if tc.Type != "" {
-							toolCalls[*tc.Index].Type = tc.Type
-						}
-						if tc.Function.Name != "" {
-							if toolCalls[*tc.Index].Function.Name == "" {
-								toolCalls[*tc.Index].Function.Name = tc.Function.Name
-							} else {
-								toolCalls[*tc.Index].Function.Name += tc.Function.Name
-							}
-						}
-						if tc.Function.Arguments != "" {
-							toolCalls[*tc.Index].Function.Arguments += tc.Function.Arguments
-						}
+						for _, tc := range delta.ToolCalls {
+						toolCalls = mergeToolCallChunk(toolCalls, tc)
 					}
 				}
 			}
@@ -261,6 +241,31 @@ func (s *Session) runCompletionLoop(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// mergeToolCallChunk merges a streamed tool-call delta chunk into the accumulator.
+// Chunks with a nil Index are malformed and are silently dropped.
+func mergeToolCallChunk(toolCalls []goopenai.ToolCall, tc goopenai.ToolCall) []goopenai.ToolCall {
+	if tc.Index == nil {
+		return toolCalls
+	}
+	for len(toolCalls) <= *tc.Index {
+		toolCalls = append(toolCalls, goopenai.ToolCall{})
+	}
+	idx := *tc.Index
+	if tc.ID != "" {
+		toolCalls[idx].ID = tc.ID
+	}
+	if tc.Type != "" {
+		toolCalls[idx].Type = tc.Type
+	}
+	if tc.Function.Name != "" {
+		toolCalls[idx].Function.Name += tc.Function.Name
+	}
+	if tc.Function.Arguments != "" {
+		toolCalls[idx].Function.Arguments += tc.Function.Arguments
+	}
+	return toolCalls
 }
 
 func (s *Session) handleToolCall(tc goopenai.ToolCall) {
