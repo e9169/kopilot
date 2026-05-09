@@ -21,7 +21,10 @@ import (
 
 	"github.com/chzyer/readline"
 	"github.com/e9169/kopilot/pkg/k8s"
-	copilot "github.com/github/copilot-sdk/go"
+	"github.com/e9169/kopilot/pkg/llm"
+	copilotprovider "github.com/e9169/kopilot/pkg/llm/copilot"
+	geminiprovider "github.com/e9169/kopilot/pkg/llm/gemini"
+	openaiprovider "github.com/e9169/kopilot/pkg/llm/openai"
 )
 
 // Version information for display
@@ -484,6 +487,7 @@ type agentState struct {
 	turnsGPT4Count     int       // turns sent to premium model
 	premiumUsedAtStart float64   // quotaUsed at session start (delta for /usage)
 	lastResponseText   string    // for /copy, /last, and truncation; guarded by responseMu
+	providerName       string    // display name of the active LLM provider
 }
 
 // setAbortCurrentTurn installs (or clears) the active-turn abort callback.
@@ -520,7 +524,7 @@ func (s *agentState) getLastResponse() string {
 // loopDeps groups the immutable runtime dependencies shared across the interactive session loop.
 type loopDeps struct {
 	ctx         context.Context
-	client      *copilot.Client
+	provider    llm.Provider
 	k8sProvider *k8s.Provider
 	state       *agentState
 	isIdle      *bool
@@ -617,8 +621,8 @@ const maxDisplayLines = 30
 // onMessageEvent handles the final complete assistant message.
 // When streaming was active the content was already printed incrementally;
 // this function only stores it and closes the streaming state in that case.
-func onMessageEvent(event copilot.SessionEvent, state *agentState) {
-	d, ok := event.Data.(*copilot.AssistantMessageData)
+func onMessageEvent(event llm.Event, state *agentState) {
+	d, ok := event.Data.(*llm.MessageData)
 	if !ok {
 		return
 	}
@@ -651,8 +655,8 @@ func onMessageEvent(event copilot.SessionEvent, state *agentState) {
 }
 
 // onSessionErrorEvent prints errors from session.error events to the user.
-func onSessionErrorEvent(event copilot.SessionEvent) {
-	d, ok := event.Data.(*copilot.SessionErrorData)
+func onSessionErrorEvent(event llm.Event) {
+	d, ok := event.Data.(*llm.ErrorData)
 	if !ok {
 		return
 	}
@@ -660,46 +664,37 @@ func onSessionErrorEvent(event copilot.SessionEvent) {
 	if d.Message != "" {
 		msg = d.Message
 	}
-	code := ""
-	if d.StatusCode != nil {
-		code = fmt.Sprintf(" [status %d]", *d.StatusCode)
-	}
-	errType := ""
-	if d.ErrorType != "" {
-		errType = fmt.Sprintf(" [%s]", d.ErrorType)
-	}
-	fmt.Fprintf(os.Stderr, "Error%s%s: %s\n", code, errType, msg)
+	fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
 }
 
 // onUsageEvent records quota information from usage snapshots.
-func onUsageEvent(event copilot.SessionEvent, state *agentState) {
-	d, ok := event.Data.(*copilot.AssistantUsageData)
-	if !ok || d.QuotaSnapshots == nil {
+func onUsageEvent(event llm.Event, state *agentState) {
+	d, ok := event.Data.(*llm.UsageData)
+	if !ok {
 		return
 	}
-	snapshot, exists := d.QuotaSnapshots["premium_interactions"]
-	if exists && snapshot.RemainingPercentage >= 0 {
-		state.quotaPercentage = snapshot.RemainingPercentage
-		state.quotaUnlimited = snapshot.IsUnlimitedEntitlement
-		state.quotaUsed = snapshot.UsedRequests
-		state.quotaTotal = snapshot.EntitlementRequests
+	if d.QuotaPercentage >= 0 {
+		state.quotaPercentage = d.QuotaPercentage
+		state.quotaUnlimited = d.QuotaUnlimited
+		state.quotaUsed = d.QuotaUsed
+		state.quotaTotal = d.QuotaTotal
 	}
 }
 
 // setupSessionEventHandler creates and returns an event handler for the session.
-func setupSessionEventHandler(session *copilot.Session, isIdlePtr *bool, state *agentState) {
-	session.On(func(event copilot.SessionEvent) {
+func setupSessionEventHandler(session llm.Session, isIdlePtr *bool, state *agentState) {
+	session.On(func(event llm.Event) {
 		switch event.Type {
-		case "assistant.message":
+		case llm.EventMessage:
 			onMessageEvent(event, state)
-		case "assistant.message_delta":
+		case llm.EventDelta:
 			onDeltaEvent(event)
-		case "session.error":
+		case llm.EventError:
 			onSessionErrorEvent(event)
-		case "session.idle":
+		case llm.EventIdle:
 			*isIdlePtr = true
 			state.setAbortCurrentTurn(nil)
-		case "assistant.usage":
+		case llm.EventUsage:
 			onUsageEvent(event, state)
 		}
 	})
@@ -739,7 +734,7 @@ func getRandomExamples(count int) []string {
 // Run starts the Copilot agent with Kubernetes cluster tools.
 // mcpConfigPath is the path to the JSON file storing MCP server configurations;
 // pass an empty string to use the default (~/.kopilot/mcp.json).
-func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputFormat, agentType AgentType, mcpConfigPath string) error {
+func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputFormat, agentType AgentType, mcpConfigPath string, provider llm.Provider) error {
 	// Configure logging to stderr to avoid interfering with stdio-based JSON-RPC
 	log.SetOutput(os.Stderr)
 
@@ -755,6 +750,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 		selectedAgent:   agentType,
 		mcpConfigPath:   mcpConfigPath,
 		sessionStart:    time.Now(),
+		providerName:    provider.Name(),
 	}
 
 	// Create a cancellable context for the entire agent lifecycle
@@ -762,19 +758,18 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Create and start Copilot client
-	client, err := createAndStartClient(ctx)
-	if err != nil {
+	// Initialize the LLM provider
+	if err := provider.Start(ctx); err != nil {
 		return err
 	}
 	defer func() {
-		if err := client.Stop(); err != nil {
-			log.Printf("Warning: error stopping Copilot client: %v", err)
+		if err := provider.Stop(); err != nil {
+			log.Printf("Warning: error stopping provider: %v", err)
 		}
 	}()
 
 	// Create initial session with cost-effective model
-	session, err := createSessionWithModel(ctx, client, k8sProvider, state, modelCostEffective)
+	session, err := createSessionWithModel(ctx, provider, k8sProvider, state, modelCostEffective)
 	if err != nil {
 		return err
 	}
@@ -789,7 +784,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	setupSessionEventHandler(session, &isIdle, state)
 
 	if !isJSONOutput(outputFormat) {
-		printBanner(k8sProvider, mode, agentType, mcpConfigPath)
+		printBanner(k8sProvider, mode, agentType, mcpConfigPath, provider)
 	}
 
 	// Mark as idle so user can start typing immediately
@@ -798,7 +793,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 	// Interactive loop with session management
 	deps := &loopDeps{
 		ctx:         ctx,
-		client:      client,
+		provider:    provider,
 		k8sProvider: k8sProvider,
 		state:       state,
 		isIdle:      &isIdle,
@@ -807,7 +802,7 @@ func Run(k8sProvider *k8s.Provider, mode ExecutionMode, outputFormat OutputForma
 }
 
 // printBanner prints the ASCII art logo and startup status to stdout.
-func printBanner(k8sProvider *k8s.Provider, mode ExecutionMode, agentType AgentType, mcpConfigPath string) {
+func printBanner(k8sProvider *k8s.Provider, mode ExecutionMode, agentType AgentType, mcpConfigPath string, provider llm.Provider) {
 	fmt.Println()
 	fmt.Printf("%s  $    $$                       $     \"\"$$               $$           %s\n", colorCyan, colorReset)
 	fmt.Printf("%s  $  $$     #$$$    $ $$$     $$$       $$      $$$1   $$$$$$$   %s[))%s  \n", colorCyan, colorRed, colorReset)
@@ -826,6 +821,7 @@ func printBanner(k8sProvider *k8s.Provider, mode ExecutionMode, agentType AgentT
 	if currentCtx != "" {
 		fmt.Printf("  %s●%s Active context: %s%s%s\n", colorCyan, colorReset, colorCyan, currentCtx, colorReset)
 	}
+	fmt.Printf("  %s●%s AI provider:    %s%s%s\n", colorCyan, colorReset, colorCyan, provider.Name(), colorReset)
 
 	printBannerMode(mode)
 	printBannerAgent(agentType)
@@ -886,47 +882,7 @@ func printBannerExamples(agentType AgentType) {
 	fmt.Println()
 }
 
-// createAndStartClient creates and starts the Copilot client.
-// The SDK uses the embedded CLI binary (bundled via `go tool bundler`)
-// or falls back to the `copilot` CLI in PATH.
-func createAndStartClient(ctx context.Context) (*copilot.Client, error) {
-	// Get current working directory for CLI context
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
-	// Let the SDK auto-detect the CLI binary.
-	// The embedded CLI (from `go tool bundler`) takes priority,
-	// then COPILOT_CLI_PATH env var, then `copilot` in PATH.
-	client := copilot.NewClient(&copilot.ClientOptions{
-		Cwd:      cwd,
-		LogLevel: "error", // Reduce noise in logs
-	})
-
-	log.Println("Starting Copilot client...")
-	if err := client.Start(ctx); err != nil {
-		return nil, fmt.Errorf("failed to start copilot client: %w\n\nTip: Ensure GitHub Copilot CLI is properly set up and authenticated.\nRun 'go tool bundler' to embed the correct CLI version", err)
-	}
-
-	log.Println("Copilot client started successfully")
-	return client, nil
-}
-
-// buildCustomAgents converts all agentDefinitions into SDK CustomAgentConfig entries
-func buildCustomAgents() []copilot.CustomAgentConfig {
-	configs := make([]copilot.CustomAgentConfig, 0, len(agentDefinitions))
-	for _, def := range agentDefinitions {
-		configs = append(configs, copilot.CustomAgentConfig{
-			Name:        def.Name,
-			DisplayName: def.DisplayName,
-			Description: def.Description,
-			Prompt:      def.Prompt,
-			Tools:       def.Tools, // nil means all tools are available
-		})
-	}
-	return configs
-}
+// Removed createAndStartClient and buildCustomAgents as they are provider-specific now
 
 // buildSystemMessage composes the full system message, optionally including the
 // specialist prompt for the currently selected agent persona.
@@ -967,14 +923,14 @@ func buildSystemMessage(agentType AgentType) string {
 
 // loadMCPServersForSession reads the MCP config and converts it to the SDK map type.
 // Returns nil when no servers are configured so that MCPServers is omitted from the session.
-func loadMCPServersForSession(cfgPath string) map[string]copilot.MCPServerConfig {
+func loadMCPServersForSession(cfgPath string) map[string]any {
 	servers, err := listMCPServers(cfgPath)
 	if err != nil || len(servers) == 0 {
 		return nil
 	}
-	m := make(map[string]copilot.MCPServerConfig, len(servers))
+	m := make(map[string]any, len(servers))
 	for _, s := range servers {
-		m[s.Name] = copilot.MCPServerConfig{
+		m[s.Name] = map[string]string{
 			"type": s.Type,
 			"url":  s.URL,
 		}
@@ -983,22 +939,19 @@ func loadMCPServersForSession(cfgPath string) map[string]copilot.MCPServerConfig
 }
 
 // createSessionWithModel creates a new Copilot session with specified model
-func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProvider *k8s.Provider, state *agentState, model string) (*copilot.Session, error) {
+func createSessionWithModel(ctx context.Context, client llm.Provider, k8sProvider *k8s.Provider, state *agentState, model string) (llm.Session, error) {
 	tools := defineTools(k8sProvider, state)
 	systemMessage := buildSystemMessage(state.selectedAgent)
 	mcpServers := loadMCPServersForSession(state.mcpConfigPath)
 
-	session, err := client.CreateSession(ctx, &copilot.SessionConfig{
-		Model:               model,
-		Streaming:           true,
-		Tools:               tools,
-		CustomAgents:        buildCustomAgents(),
-		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
-		SystemMessage: &copilot.SystemMessageConfig{
-			Mode:    "replace",
-			Content: systemMessage,
+	session, err := client.CreateSession(ctx, &llm.SessionConfig{
+		Model:         model,
+		Streaming:     true,
+		Tools:         tools,
+		SystemMessage: systemMessage,
+		ExtraConfig: map[string]any{
+			"MCPServers": mcpServers,
 		},
-		MCPServers: mcpServers,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
@@ -1234,11 +1187,11 @@ func isUnknownSlashCommand(input string) bool {
 		return false
 	}
 	lower := strings.TrimSpace(strings.ToLower(input))
-	// Known prefixes — keep in sync with handleModeSwitch, handleAgentCommand, handleMCPCommand, dispatchUXCommand.
+	// Known prefixes — keep in sync with handleModeSwitch, handleAgentCommand, handleMCPCommand, dispatchUXCommand, dispatchProviderCommand.
 	known := []string{
 		"/help", "/mode", "/status", "/readonly", "/interactive", "/agent", "/mcp",
 		"/clear", "/new", "/usage", "/compact", "/last", "/copy",
-		"/model", "/streamer", "/context",
+		"/model", "/streamer", "/context", "/provider",
 	}
 	for _, prefix := range known {
 		if lower == prefix || strings.HasPrefix(lower, prefix+" ") {
@@ -1274,6 +1227,17 @@ func printHelpMessage(state *agentState) {
 	fmt.Printf("    %s/model reset%s        re-enable automatic model routing\n", colorCyan, colorReset)
 	fmt.Printf("    %s/streamer%s [on|off]  hide quota badge (useful for screen-sharing)\n", colorCyan, colorReset)
 	fmt.Println()
+	fmt.Printf("  %sAI Provider%s\n", colorDim, colorReset)
+	fmt.Printf("    %s/provider%s              show current provider and list all options\n", colorCyan, colorReset)
+	fmt.Printf("    %s/provider list%s         same as /provider\n", colorCyan, colorReset)
+	fmt.Printf("    %s/provider <name>%s       switch provider (asks confirmation, resets conversation)\n", colorCyan, colorReset)
+	fmt.Println()
+	fmt.Printf("    %scopilot%s   GitHub Copilot — auth via Copilot CLI token (no extra setup)\n", colorCyan, colorReset)
+	fmt.Printf("    %sopenai%s    OpenAI / compatible APIs (Ollama, Azure, Anthropic…)\n", colorCyan, colorReset)
+	fmt.Printf("              %sOPENAI_API_KEY%s required; %sOPENAI_BASE_URL%s for custom endpoints\n", colorDim, colorReset, colorDim, colorReset)
+	fmt.Printf("    %sgemini%s    Google Gemini — set %sGEMINI_API_KEY%s or run:\n", colorCyan, colorReset, colorDim, colorReset)
+	fmt.Printf("              %sgcloud auth application-default login%s\n", colorDim, colorReset)
+	fmt.Println()
 	fmt.Printf("  %sKubernetes Context%s\n", colorDim, colorReset)
 	fmt.Printf("    %s/context list%s         list all kubeconfig contexts\n", colorCyan, colorReset)
 	fmt.Printf("    %s/context use <name>%s   switch active context\n", colorCyan, colorReset)
@@ -1294,7 +1258,7 @@ func printHelpMessage(state *agentState) {
 	fmt.Printf("    %sCtrl+C%s                cancel current input / abort AI response\n", colorCyan, colorReset)
 	fmt.Printf("    %sCtrl+D%s                exit\n", colorCyan, colorReset)
 	fmt.Println()
-	fmt.Printf("  %sCurrent mode: %s  |  Active agent: %s%s\n", colorDim, state.mode, state.selectedAgent, colorReset)
+	fmt.Printf("  %sCurrent: mode=%s  agent=%s  provider=%s%s\n", colorDim, state.mode, state.selectedAgent, state.providerName, colorReset)
 	fmt.Println()
 }
 
@@ -1419,12 +1383,12 @@ func resolveSwitchTarget(name string, state *agentState) (bool, AgentType, error
 
 // switchToModel replaces the current session with a new one using the given model.
 // All runtime dependencies are supplied via deps.
-func switchToModel(deps *loopDeps, oldSession *copilot.Session, newModel string) (*copilot.Session, error) {
+func switchToModel(deps *loopDeps, oldSession llm.Session, newModel string) (llm.Session, error) {
 	if err := oldSession.Disconnect(); err != nil {
 		log.Printf("Warning: failed to disconnect old session: %v", err)
 	}
 
-	newSession, err := createSessionWithModel(deps.ctx, deps.client, deps.k8sProvider, deps.state, newModel)
+	newSession, err := createSessionWithModel(deps.ctx, deps.provider, deps.k8sProvider, deps.state, newModel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new session: %w", err)
 	}
@@ -1437,18 +1401,22 @@ func switchToModel(deps *loopDeps, oldSession *copilot.Session, newModel string)
 
 // turnState holds the mutable per-iteration state of the interactive loop.
 type turnState struct {
-	session *copilot.Session
+	session llm.Session
 	model   string
+}
+
+func waitForTurnIdle(deps *loopDeps) {
+	if isJSONOutput(deps.state.outputFormat) {
+		waitForIdle(deps.isIdle)
+		return
+	}
+	waitForIdleWithSpinner(deps.isIdle)
 }
 
 // processTurn handles a single interactive turn: read input, dispatch commands, send to model.
 // Returns (exit=true) when the user has chosen to quit, or an error on failure.
 func processTurn(deps *loopDeps, rl *readline.Instance, ts *turnState) (exit bool, err error) {
-	if isJSONOutput(deps.state.outputFormat) {
-		waitForIdle(deps.isIdle)
-	} else {
-		waitForIdleWithSpinner(deps.isIdle)
-	}
+	waitForTurnIdle(deps)
 
 	input, err := readUserInput(rl, deps.state)
 	if err != nil {
@@ -1486,6 +1454,10 @@ func processTurn(deps *loopDeps, rl *readline.Instance, ts *turnState) (exit boo
 	}
 
 	if handled, err := dispatchMCPCommand(deps, input, ts); handled {
+		return false, err
+	}
+
+	if handled, err := dispatchProviderCommand(deps, rl, input, ts); handled {
 		return false, err
 	}
 
@@ -1662,23 +1634,16 @@ func printLongRunningWarning(agentType AgentType) {
 
 // sendToModel selects the best model for the query and sends it, updating ts as needed.
 // printAttachments logs attachment info for non-JSON output.
-func printAttachments(attachments []copilot.Attachment, outputFormat OutputFormat) {
+func printAttachments(paths []string, outputFormat OutputFormat) {
 	if isJSONOutput(outputFormat) {
 		return
 	}
-	for _, a := range attachments {
-		if a.Path == nil {
-			continue
-		}
-		fi, err := os.Stat(*a.Path)
+	for _, p := range paths {
+		fi, err := os.Stat(p)
 		if err != nil {
 			continue
 		}
-		dname := ""
-		if a.DisplayName != nil {
-			dname = *a.DisplayName
-		}
-		fmt.Printf("  %s📎 Attached: %s (%s)%s\n", colorCyan, dname, formatBytes(fi.Size()), colorReset)
+		fmt.Printf("  %s📎 Attached: %s (%s)%s\n", colorCyan, filepath.Base(p), formatBytes(fi.Size()), colorReset)
 	}
 }
 
@@ -1711,6 +1676,22 @@ func sendToModel(deps *loopDeps, ts *turnState, input string) error {
 	// @ file attachment injection
 	prompt, attachments := extractAttachments(input)
 	printAttachments(attachments, deps.state.outputFormat)
+
+	// Append file contents to the prompt since our llm abstraction
+	// just takes a string prompt.
+	if len(attachments) > 0 {
+		var b strings.Builder
+		b.WriteString(prompt)
+		b.WriteString("\n\nAttached files:\n")
+		for _, path := range attachments {
+			content, err := os.ReadFile(path)
+			if err == nil {
+				b.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", filepath.Base(path), string(content)))
+			}
+		}
+		prompt = b.String()
+	}
+
 	if prompt == "" {
 		prompt = input // fallback if all tokens were attachments
 	}
@@ -1723,15 +1704,13 @@ func sendToModel(deps *loopDeps, ts *turnState, input string) error {
 	}
 	*deps.isIdle = false
 	deps.state.setAbortCurrentTurn(func() {
-		if abortErr := ts.session.Abort(deps.ctx); abortErr != nil {
+		// Just disconnect the session to abort it for now
+		if abortErr := ts.session.Disconnect(); abortErr != nil {
 			log.Printf("Warning: failed to abort current turn: %v", abortErr)
 		}
 	})
-	msgOpts := copilot.MessageOptions{
-		Prompt:      prompt,
-		Attachments: attachments,
-	}
-	_, err := ts.session.Send(deps.ctx, msgOpts)
+
+	err := ts.session.SendPrompt(deps.ctx, prompt)
 	if err != nil {
 		deps.state.setAbortCurrentTurn(nil)
 		return fmt.Errorf("failed to send message: %w", err)
@@ -1774,12 +1753,12 @@ func estimateTokens(text string) int {
 }
 
 // extractAttachments parses @<filepath> tokens from the input string.
-// Valid @tokens that refer to readable files are converted to Attachments;
+// Valid @tokens that refer to readable files are returned as file paths;
 // un-resolvable tokens are left in the returned cleaned prompt string.
-func extractAttachments(input string) (string, []copilot.Attachment) {
+func extractAttachments(input string) (string, []string) {
 	words := strings.Fields(input)
 	var kept []string
-	var attachments []copilot.Attachment
+	var attachments []string
 	for _, w := range words {
 		if !strings.HasPrefix(w, "@") {
 			kept = append(kept, w)
@@ -1804,21 +1783,13 @@ func extractAttachments(input string) (string, []copilot.Attachment) {
 			kept = append(kept, w)
 			continue
 		}
-		f, openErr := os.Open(abs) // #nosec G304 — path is already resolved via filepath.Abs
+		f, openErr := os.Open(abs)
 		if openErr != nil {
 			kept = append(kept, w)
 			continue
 		}
-		if closeErr := f.Close(); closeErr != nil {
-			log.Printf("Warning: failed to close attachment file %s: %v", abs, closeErr)
-		}
-		pathCopy := abs
-		nameCopy := filepath.Base(abs)
-		attachments = append(attachments, copilot.Attachment{
-			Type:        copilot.AttachmentTypeFile,
-			Path:        &pathCopy,
-			DisplayName: &nameCopy,
-		})
+		f.Close()
+		attachments = append(attachments, abs)
 	}
 	return strings.Join(kept, " "), attachments
 }
@@ -1884,10 +1855,9 @@ func handleShellPassthrough(cmdStr string) {
 	}
 }
 
-// onDeltaEvent handles an incremental streaming delta from the assistant.
-func onDeltaEvent(event copilot.SessionEvent) {
-	d, ok := event.Data.(*copilot.AssistantMessageDeltaData)
-	if !ok || d.DeltaContent == "" {
+func onDeltaEvent(event llm.Event) {
+	d, ok := event.Data.(*llm.DeltaData)
+	if !ok || d.Content == "" {
 		return
 	}
 	if !streamingActive.Swap(true) {
@@ -1896,7 +1866,7 @@ func onDeltaEvent(event copilot.SessionEvent) {
 		time.Sleep(120 * time.Millisecond)
 		fmt.Printf("\r\033[K\n")
 	}
-	fmt.Print(d.DeltaContent)
+	fmt.Print(d.Content)
 }
 
 // printUsage prints a session usage summary for the /usage command.
@@ -1964,7 +1934,7 @@ func handleCompact(deps *loopDeps, ts *turnState) error {
 	fmt.Printf("  %s●%s Compacting conversation history...\n", colorCyan, colorReset)
 	const compactPrompt = "Summarize our entire conversation so far in 3-5 sentences, focusing on the key Kubernetes findings, issues discussed, and conclusions reached. Be factual and specific."
 	*deps.isIdle = false
-	if _, err := ts.session.Send(deps.ctx, copilot.MessageOptions{Prompt: compactPrompt}); err != nil {
+	if err := ts.session.SendPrompt(deps.ctx, compactPrompt); err != nil {
 		return fmt.Errorf("failed to send compact prompt: %w", err)
 	}
 	waitForIdleWithSpinner(deps.isIdle)
@@ -1983,7 +1953,7 @@ func handleCompact(deps *loopDeps, ts *turnState) error {
 	if summary != "" {
 		contextPrompt := fmt.Sprintf("[CONTEXT FROM PREVIOUS SESSION (%d turns)]\n%s\n[END CONTEXT]", prevTurns, summary)
 		*deps.isIdle = false
-		if _, err := ts.session.Send(deps.ctx, copilot.MessageOptions{Prompt: contextPrompt}); err != nil {
+		if err := ts.session.SendPrompt(deps.ctx, contextPrompt); err != nil {
 			log.Printf("Warning: failed to inject compact summary: %v", err)
 		} else {
 			waitForIdle(deps.isIdle)
@@ -2142,7 +2112,7 @@ func dispatchUXCommand(deps *loopDeps, input string, ts *turnState) (bool, error
 }
 
 // interactiveLoopWithModelSelection handles interactive conversation with dynamic model selection.
-func interactiveLoopWithModelSelection(deps *loopDeps, initialSession *copilot.Session) error {
+func interactiveLoopWithModelSelection(deps *loopDeps, initialSession llm.Session) error {
 	rl, err := newReadlineInstance()
 	if err != nil {
 		return fmt.Errorf("failed to initialise readline: %w", err)
@@ -2167,7 +2137,7 @@ func interactiveLoopWithModelSelection(deps *loopDeps, initialSession *copilot.S
 
 // applyAgentSwitch applies a validated /agent switch command, recreating the session if needed.
 // Returns the (possibly new) current session.
-func applyAgentSwitch(deps *loopDeps, newAgent AgentType, currentSession *copilot.Session, currentModel string) (*copilot.Session, error) {
+func applyAgentSwitch(deps *loopDeps, newAgent AgentType, currentSession llm.Session, currentModel string) (llm.Session, error) {
 	if newAgent == deps.state.selectedAgent {
 		return currentSession, nil
 	}
@@ -2178,6 +2148,153 @@ func applyAgentSwitch(deps *loopDeps, newAgent AgentType, currentSession *copilo
 	}
 	fmt.Println(formatAgentSwitchMessage(newAgent))
 	return newSession, nil
+}
+
+// availableProviders lists all supported provider names in display order.
+var availableProviders = []string{"copilot", "openai", "gemini"}
+
+// providerDisplayNames maps provider keys to their human-readable names.
+var providerDisplayNames = map[string]string{
+	"copilot": "GitHub Copilot",
+	"openai":  "OpenAI",
+	"gemini":  "Google Gemini",
+}
+
+// NewProviderByName constructs the llm.Provider for the given provider name.
+// This mirrors the switch in main.go so providers can be swapped at runtime.
+func NewProviderByName(name string) (llm.Provider, error) {
+	switch strings.ToLower(name) {
+	case "copilot":
+		return copilotprovider.NewProvider(), nil
+	case "openai":
+		return openaiprovider.NewProvider(), nil
+	case "gemini":
+		return geminiprovider.NewProvider(), nil
+	default:
+		return nil, fmt.Errorf("unknown provider %q — available: %s", name, strings.Join(availableProviders, ", "))
+	}
+}
+
+// listProviders displays available providers and the current one.
+func listProviders(deps *loopDeps) {
+	fmt.Printf("\n  %s● AI Provider%s\n", colorCyan, colorReset)
+	fmt.Printf("    Current: %s%s%s\n", colorCyan, deps.state.providerName, colorReset)
+	fmt.Printf("    Available providers:\n")
+	for _, name := range availableProviders {
+		active := ""
+		if providerDisplayNames[name] == deps.state.providerName {
+			active = fmt.Sprintf(" %s← active%s", colorGreen, colorReset)
+		}
+		fmt.Printf("      %s%-10s%s %s%s\n", colorCyan, name, colorReset, providerDisplayNames[name], active)
+	}
+	fmt.Println()
+}
+
+// switchProvider handles switching to a new provider with confirmation.
+func switchProvider(deps *loopDeps, rl *readline.Instance, ts *turnState, newName string) error {
+	displayName, ok := providerDisplayNames[newName]
+	if !ok {
+		fmt.Printf("  %s●%s Unknown provider %q — available: %s\n",
+			colorRed, colorReset, newName, strings.Join(availableProviders, ", "))
+		return nil
+	}
+
+	if displayName == deps.state.providerName {
+		fmt.Printf("  %s●%s Already using %s%s%s\n", colorYellow, colorReset, colorCyan, displayName, colorReset)
+		return nil
+	}
+
+	// Warn and ask for confirmation.
+	fmt.Printf("\n  %s⚠  Switching to %s%s%s will reset the current conversation.%s\n",
+		colorYellow, colorCyan, displayName, colorYellow, colorReset)
+	fmt.Printf("  %sMake sure %s credentials are configured before switching.%s\n",
+		colorDim, displayName, colorReset)
+
+	// Use readline to get the y/N answer so history / Ctrl-C still work.
+	rl.SetPrompt(fmt.Sprintf("  %sSwitch to %s? [y/N]%s ", colorYellow, displayName, colorReset))
+	answer, err := rl.Readline()
+	fmt.Print(colorReset)
+	if err != nil {
+		// Ctrl-C or EOF = cancel.
+		fmt.Printf("  %s●%s Switch cancelled\n", colorYellow, colorReset)
+		return nil
+	}
+	if strings.ToLower(strings.TrimSpace(answer)) != "y" {
+		fmt.Printf("  %s●%s Switch cancelled\n", colorYellow, colorReset)
+		return nil
+	}
+
+	// Build and start the new provider.
+	newProvider, buildErr := NewProviderByName(newName)
+	if buildErr != nil {
+		fmt.Printf(fmtErrorBullet, colorRed, colorReset, buildErr)
+		return nil
+	}
+	if startErr := newProvider.Start(deps.ctx); startErr != nil {
+		fmt.Printf("  %s●%s Failed to start %s: %v\n", colorRed, colorReset, displayName, startErr)
+		return nil
+	}
+
+	// Stop the old provider (best-effort).
+	if stopErr := deps.provider.Stop(); stopErr != nil {
+		log.Printf("Warning: error stopping previous provider: %v", stopErr)
+	}
+
+	// Swap provider on deps and update state.
+	deps.provider = newProvider
+	deps.state.providerName = newProvider.Name()
+
+	// Create a fresh session with the new provider.
+	newSession, sessErr := createSessionWithModel(deps.ctx, deps.provider, deps.k8sProvider, deps.state, modelCostEffective)
+	if sessErr != nil {
+		return fmt.Errorf("failed to create session with new provider: %w", sessErr)
+	}
+	setupSessionEventHandler(newSession, deps.isIdle, deps.state)
+
+	// Disconnect old session (best-effort).
+	if discErr := ts.session.Disconnect(); discErr != nil {
+		log.Printf("Warning: failed to disconnect old session: %v", discErr)
+	}
+	ts.session = newSession
+	ts.model = modelCostEffective
+
+	// Reset conversation counters.
+	deps.state.turnCount = 0
+	deps.state.turnsMiniCount = 0
+	deps.state.turnsGPT4Count = 0
+	deps.state.sessionStart = time.Now()
+	deps.state.premiumUsedAtStart = deps.state.quotaUsed
+
+	fmt.Printf("  %s●%s Switched to %s%s%s — conversation reset\n",
+		colorGreen, colorReset, colorCyan, deps.state.providerName, colorReset)
+	fmt.Println()
+	return nil
+}
+
+// dispatchProviderCommand processes /provider commands.
+// Returns (true, err) when the input was a /provider command.
+func dispatchProviderCommand(deps *loopDeps, rl *readline.Instance, input string, ts *turnState) (bool, error) {
+	trimmed := strings.TrimSpace(input)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "/provider") {
+		return false, nil
+	}
+
+	parts := strings.Fields(trimmed)
+	sub := ""
+	if len(parts) >= 2 {
+		sub = strings.ToLower(parts[1])
+	}
+
+	switch sub {
+	case "", "list":
+		listProviders(deps)
+	default:
+		if err := switchProvider(deps, rl, ts, sub); err != nil {
+			return true, err
+		}
+	}
+
+	return true, nil
 }
 
 // defineTools creates all the Kubernetes-related tools for the agent
