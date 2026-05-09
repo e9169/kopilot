@@ -8,8 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"encoding/json"
+	"fmt"
+
 	"github.com/e9169/kopilot/pkg/k8s"
-	copilot "github.com/github/copilot-sdk/go"
+	"github.com/e9169/kopilot/pkg/llm"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -75,14 +78,14 @@ func TestListClustersTool(t *testing.T) {
 
 	// Test tool invocation
 	_ = ListClustersParams{}
-	inv := copilot.ToolInvocation{}
+	inv := llm.ToolInvocation{}
 
-	result, err := tool.Handler(inv)
+	result, err := tool.Handler(nil, inv)
 	if err != nil {
 		t.Errorf("Tool handler returned error: %v", err)
 	}
 
-	if result.TextResultForLLM == "" {
+	if fmt.Sprintf("%v", result) == "" {
 		t.Error("Tool handler returned empty result")
 	}
 }
@@ -92,17 +95,18 @@ func TestListClustersToolJSONOutput(t *testing.T) {
 	state := &agentState{mode: ModeReadOnly, outputFormat: OutputJSON}
 	tool := defineListClustersTool(provider, state)
 
-	inv := copilot.ToolInvocation{}
-	result, err := tool.Handler(inv)
+	inv := llm.ToolInvocation{}
+	result, err := tool.Handler(nil, inv)
 	if err != nil {
 		t.Errorf("Tool handler returned error: %v", err)
 	}
 
-	if result.TextResultForLLM == "" {
+	if fmt.Sprintf("%v", result) == "" {
 		t.Error("Tool handler returned empty result")
 	}
 
-	if !strings.Contains(result.TextResultForLLM, "clusters") {
+	b, _ := json.Marshal(result)
+	if !strings.Contains(string(b), "clusters") {
 		t.Error("JSON output did not include expected key 'clusters'")
 	}
 }
@@ -348,8 +352,8 @@ func TestToolConcurrency(t *testing.T) {
 		go func() {
 			for _, tool := range tools {
 				if tool.Name == "list_clusters" {
-					inv := copilot.ToolInvocation{}
-					_, _ = tool.Handler(inv)
+					inv := llm.ToolInvocation{}
+					_, _ = tool.Handler(nil, inv)
 				}
 			}
 			done <- true
@@ -392,11 +396,11 @@ func BenchmarkListClustersTool(b *testing.B) {
 	provider := createMockProvider(b)
 	state := &agentState{mode: ModeReadOnly, outputFormat: OutputText}
 	tool := defineListClustersTool(provider, state)
-	inv := copilot.ToolInvocation{}
+	inv := llm.ToolInvocation{}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = tool.Handler(inv)
+		_, _ = tool.Handler(nil, inv)
 	}
 }
 
@@ -516,7 +520,7 @@ func TestDefineToolsWithState(t *testing.T) {
 	}
 
 	// Verify kubectl_exec tool exists
-	var kubectlTool *copilot.Tool
+	var kubectlTool *llm.Tool
 	for i := range tools {
 		if tools[i].Name == toolKubectlExec {
 			kubectlTool = &tools[i]
