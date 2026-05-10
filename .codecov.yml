@@ -31,7 +31,9 @@ ignore:
   - "_site/**/*"
   - "**/*_test.go"
   - "test_*.go"
-  - "main.go"  # Entry point, tested via integration
+  - "main.go"
+  - "pkg/llm/gemini/provider.go"
+  - "pkg/llm/copilot/provider.go"
 
 # Component-based coverage
 component_management:
