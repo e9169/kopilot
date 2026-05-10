@@ -16,9 +16,9 @@ type stubSession struct {
 	handlers []func(llm.Event)
 }
 
-func (s *stubSession) Disconnect() error                             { return nil }
-func (s *stubSession) SendPrompt(_ context.Context, _ string) error  { return nil }
-func (s *stubSession) On(h func(llm.Event))                          { s.handlers = append(s.handlers, h) }
+func (s *stubSession) Disconnect() error                            { return nil }
+func (s *stubSession) SendPrompt(_ context.Context, _ string) error { return nil }
+func (s *stubSession) On(h func(llm.Event))                         { s.handlers = append(s.handlers, h) }
 func (s *stubSession) emit(e llm.Event) {
 	for _, h := range s.handlers {
 		h(e)

@@ -6,8 +6,6 @@ import (
 	goopenai "github.com/sashabaranov/go-openai"
 )
 
-func intPtr(i int) *int { return &i }
-
 func TestMergeToolCallChunk_NilIndexDropped(t *testing.T) {
 	chunk := goopenai.ToolCall{Index: nil, ID: "id1"}
 	got := mergeToolCallChunk(nil, chunk)

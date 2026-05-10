@@ -1829,7 +1829,7 @@ func extractAttachments(input string) (string, []string) {
 			kept = append(kept, w)
 			continue
 		}
-		f.Close()
+		_ = f.Close()
 		attachments = append(attachments, abs)
 	}
 	return strings.Join(kept, " "), attachments

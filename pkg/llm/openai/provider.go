@@ -37,7 +37,7 @@ func (p *Provider) Start(ctx context.Context) error {
 		apiKey = "dummy-key-for-local-models"
 	}
 	config := goopenai.DefaultConfig(apiKey)
-	
+
 	if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
 		config.BaseURL = baseURL
 	}
@@ -56,14 +56,14 @@ func (p *Provider) CreateSession(ctx context.Context, config *llm.SessionConfig)
 
 	for _, t := range config.Tools {
 		toolMap[t.Name] = t
-		
+
 		// Convert standard JSON schema properties to jsonschema.Definition
 		paramsBytes, _ := json.Marshal(t.Parameters)
 		var definition jsonschema.Definition
 		if err := json.Unmarshal(paramsBytes, &definition); err != nil {
 			// Fallback empty schema if parsing fails
 			definition = jsonschema.Definition{
-				Type: jsonschema.Object,
+				Type:       jsonschema.Object,
 				Properties: map[string]jsonschema.Definition{},
 			}
 		}
@@ -155,92 +155,90 @@ func (s *Session) runCompletionLoop(ctx context.Context) {
 			Stream:   s.streaming,
 			Tools:    s.tools,
 		}
-
+		var cont bool
 		if s.streaming {
-			stream, err := s.client.CreateChatCompletionStream(ctx, req)
-			if err != nil {
-				s.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: err.Error()}})
-				return
-			}
-
-			var fullContent strings.Builder
-			var toolCalls []goopenai.ToolCall
-			
-			for {
-				resp, err := stream.Recv()
-				if errors.Is(err, io.EOF) {
-					stream.Close()
-					break
-				}
-				if err != nil {
-					stream.Close()
-					if !errors.Is(err, context.Canceled) {
-						s.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: err.Error()}})
-					}
-					return
-				}
-
-				if len(resp.Choices) > 0 {
-					delta := resp.Choices[0].Delta
-					if delta.Content != "" {
-						fullContent.WriteString(delta.Content)
-						s.emit(llm.Event{Type: llm.EventDelta, Data: &llm.DeltaData{Content: delta.Content}})
-					}
-					
-						for _, tc := range delta.ToolCalls {
-						toolCalls = mergeToolCallChunk(toolCalls, tc)
-					}
-				}
-			}
-
-			s.messages = append(s.messages, goopenai.ChatCompletionMessage{
-				Role:      goopenai.ChatMessageRoleAssistant,
-				Content:   fullContent.String(),
-				ToolCalls: toolCalls,
-			})
-			
-			if fullContent.Len() > 0 {
-				s.emit(llm.Event{Type: llm.EventMessage, Data: &llm.MessageData{Content: fullContent.String()}})
-			}
-
-			if len(toolCalls) > 0 {
-				for _, tc := range toolCalls {
-					s.handleToolCall(tc)
-				}
-				// After tool calls, continue the loop to send results back
-				continue
-			}
-			return
-
+			cont = s.runStreamingStep(ctx, req)
 		} else {
-			resp, err := s.client.CreateChatCompletion(ctx, req)
-			if err != nil {
-				if !errors.Is(err, context.Canceled) {
-					s.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: err.Error()}})
-				}
-				return
-			}
-			
-			if len(resp.Choices) == 0 {
-				return
-			}
-			
-			msg := resp.Choices[0].Message
-			s.messages = append(s.messages, msg)
-			
-			if msg.Content != "" {
-				s.emit(llm.Event{Type: llm.EventMessage, Data: &llm.MessageData{Content: msg.Content}})
-			}
-			
-			if len(msg.ToolCalls) > 0 {
-				for _, tc := range msg.ToolCalls {
-					s.handleToolCall(tc)
-				}
-				continue
-			}
+			cont = s.runNonStreamingStep(ctx, req)
+		}
+		if !cont {
 			return
 		}
 	}
+}
+
+func (s *Session) runStreamingStep(ctx context.Context, req goopenai.ChatCompletionRequest) bool {
+	stream, err := s.client.CreateChatCompletionStream(ctx, req)
+	if err != nil {
+		s.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: err.Error()}})
+		return false
+	}
+	var fullContent strings.Builder
+	var toolCalls []goopenai.ToolCall
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			_ = stream.Close()
+			break
+		}
+		if err != nil {
+			_ = stream.Close()
+			if !errors.Is(err, context.Canceled) {
+				s.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: err.Error()}})
+			}
+			return false
+		}
+		if len(resp.Choices) > 0 {
+			delta := resp.Choices[0].Delta
+			if delta.Content != "" {
+				fullContent.WriteString(delta.Content)
+				s.emit(llm.Event{Type: llm.EventDelta, Data: &llm.DeltaData{Content: delta.Content}})
+			}
+			for _, tc := range delta.ToolCalls {
+				toolCalls = mergeToolCallChunk(toolCalls, tc)
+			}
+		}
+	}
+	s.messages = append(s.messages, goopenai.ChatCompletionMessage{
+		Role:      goopenai.ChatMessageRoleAssistant,
+		Content:   fullContent.String(),
+		ToolCalls: toolCalls,
+	})
+	if fullContent.Len() > 0 {
+		s.emit(llm.Event{Type: llm.EventMessage, Data: &llm.MessageData{Content: fullContent.String()}})
+	}
+	if len(toolCalls) > 0 {
+		for _, tc := range toolCalls {
+			s.handleToolCall(tc)
+		}
+		return true
+	}
+	return false
+}
+
+func (s *Session) runNonStreamingStep(ctx context.Context, req goopenai.ChatCompletionRequest) bool {
+	resp, err := s.client.CreateChatCompletion(ctx, req)
+	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			s.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: err.Error()}})
+		}
+		return false
+	}
+	if len(resp.Choices) == 0 {
+		return false
+	}
+	msg := resp.Choices[0].Message
+	s.messages = append(s.messages, msg)
+	if msg.Content != "" {
+		s.emit(llm.Event{Type: llm.EventMessage, Data: &llm.MessageData{Content: msg.Content}})
+	}
+	if len(msg.ToolCalls) > 0 {
+		for _, tc := range msg.ToolCalls {
+			s.handleToolCall(tc)
+		}
+		return true
+	}
+	return false
 }
 
 // mergeToolCallChunk merges a streamed tool-call delta chunk into the accumulator.

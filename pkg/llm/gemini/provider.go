@@ -26,7 +26,7 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) Start(ctx context.Context) error {
-	// genai.NewClient automatically uses GEMINI_API_KEY if present, 
+	// genai.NewClient automatically uses GEMINI_API_KEY if present,
 	// or falls back to Vertex AI / Application Default Credentials
 	client, err := genai.NewClient(ctx, nil)
 	if err != nil {
@@ -42,40 +42,39 @@ func (p *Provider) Stop() error {
 	return nil
 }
 
+func jsonTypeToGenAI(t string) genai.Type {
+	switch t {
+	case "string":
+		return genai.TypeString
+	case "number":
+		return genai.TypeNumber
+	case "integer":
+		return genai.TypeInteger
+	case "boolean":
+		return genai.TypeBoolean
+	case "array":
+		return genai.TypeArray
+	default:
+		return genai.TypeObject
+	}
+}
+
 func convertJSONSchemaToType(schema map[string]any) *genai.Schema {
 	if schema == nil {
 		return nil
 	}
-	
 	s := &genai.Schema{}
-	
 	if t, ok := schema["type"].(string); ok {
-		switch t {
-		case "string":
-			s.Type = genai.TypeString
-		case "number":
-			s.Type = genai.TypeNumber
-		case "integer":
-			s.Type = genai.TypeInteger
-		case "boolean":
-			s.Type = genai.TypeBoolean
-		case "array":
-			s.Type = genai.TypeArray
-		case "object":
-			s.Type = genai.TypeObject
-		}
+		s.Type = jsonTypeToGenAI(t)
 	} else {
-		s.Type = genai.TypeObject // default
+		s.Type = genai.TypeObject
 	}
-
 	if desc, ok := schema["description"].(string); ok {
 		s.Description = desc
 	}
-
 	if items, ok := schema["items"].(map[string]any); ok {
 		s.Items = convertJSONSchemaToType(items)
 	}
-
 	if properties, ok := schema["properties"].(map[string]any); ok {
 		s.Properties = make(map[string]*genai.Schema)
 		for k, v := range properties {
@@ -84,7 +83,6 @@ func convertJSONSchemaToType(schema map[string]any) *genai.Schema {
 			}
 		}
 	}
-
 	if required, ok := schema["required"].([]any); ok {
 		for _, req := range required {
 			if reqStr, isStr := req.(string); isStr {
@@ -92,7 +90,6 @@ func convertJSONSchemaToType(schema map[string]any) *genai.Schema {
 			}
 		}
 	}
-
 	return s
 }
 
@@ -103,7 +100,7 @@ func (p *Provider) CreateSession(ctx context.Context, config *llm.SessionConfig)
 
 	for _, t := range config.Tools {
 		toolMap[t.Name] = t
-		
+
 		schema := convertJSONSchemaToType(t.Parameters)
 		if schema == nil {
 			schema = &genai.Schema{Type: genai.TypeObject}
@@ -130,8 +127,8 @@ func (p *Provider) CreateSession(ctx context.Context, config *llm.SessionConfig)
 	}
 
 	chatConfig := &genai.GenerateContentConfig{
-		Tools:              toolDeclarations,
-		SystemInstruction:  sysInstructions,
+		Tools:             toolDeclarations,
+		SystemInstruction: sysInstructions,
 	}
 
 	chat, err := p.client.Chats.Create(ctx, config.Model, chatConfig, nil)
@@ -191,97 +188,94 @@ func (s *Session) SendPrompt(ctx context.Context, prompt string) error {
 }
 
 func (s *Session) runCompletionLoop(ctx context.Context, prompt string) {
-	// The initial request sends the user prompt. 
-	// Subsequent loops handle tool responses.
 	var parts []genai.Part
 	if prompt != "" {
 		parts = append(parts, *genai.NewPartFromText(prompt))
 	}
-
 	for {
+		var (
+			next []genai.Part
+			cont bool
+		)
 		if s.streaming {
-			stream := s.chat.SendMessageStream(ctx, parts...)
-
-			var fullContent strings.Builder
-			var functionCalls []*genai.FunctionCall
-
-			for resp, err := range stream {
-				if err != nil {
-					if !errors.Is(err, context.Canceled) {
-						s.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: err.Error()}})
-					}
-					return
-				}
-				if len(resp.Candidates) > 0 {
-					candidate := resp.Candidates[0]
-					if candidate.Content != nil {
-						for _, part := range candidate.Content.Parts {
-							if part.Text != "" {
-								fullContent.WriteString(part.Text)
-								s.emit(llm.Event{Type: llm.EventDelta, Data: &llm.DeltaData{Content: part.Text}})
-							}
-							if part.FunctionCall != nil {
-								functionCalls = append(functionCalls, part.FunctionCall)
-							}
-						}
-					}
-				}
-			}
-
-			if fullContent.Len() > 0 {
-				s.emit(llm.Event{Type: llm.EventMessage, Data: &llm.MessageData{Content: fullContent.String()}})
-			}
-
-			if len(functionCalls) > 0 {
-				parts = nil // clear for tool response
-				for _, fc := range functionCalls {
-					res := s.handleToolCall(fc)
-					parts = append(parts, res)
-				}
-				continue
-			}
-			return
-
+			next, cont = s.runStreamingStep(ctx, parts)
 		} else {
-			// Non-streaming
-			resp, err := s.chat.SendMessage(ctx, parts...)
-			if err != nil {
-				if !errors.Is(err, context.Canceled) {
-					s.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: err.Error()}})
-				}
-				return
-			}
-			
-			if len(resp.Candidates) == 0 {
-				return
-			}
-			
-			candidate := resp.Candidates[0]
-			if candidate.Content == nil {
-				return
-			}
-
-			var functionCalls []*genai.FunctionCall
-			for _, part := range candidate.Content.Parts {
-				if part.Text != "" {
-					s.emit(llm.Event{Type: llm.EventMessage, Data: &llm.MessageData{Content: part.Text}})
-				}
-				if part.FunctionCall != nil {
-					functionCalls = append(functionCalls, part.FunctionCall)
-				}
-			}
-
-			if len(functionCalls) > 0 {
-				parts = nil // clear for tool response
-				for _, fc := range functionCalls {
-					res := s.handleToolCall(fc)
-					parts = append(parts, res)
-				}
-				continue
-			}
+			next, cont = s.runNonStreamingStep(ctx, parts)
+		}
+		if !cont {
 			return
 		}
+		parts = next
 	}
+}
+
+func (s *Session) runStreamingStep(ctx context.Context, parts []genai.Part) ([]genai.Part, bool) {
+	stream := s.chat.SendMessageStream(ctx, parts...)
+	var fullContent strings.Builder
+	var functionCalls []*genai.FunctionCall
+	for resp, err := range stream {
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				s.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: err.Error()}})
+			}
+			return nil, false
+		}
+		if len(resp.Candidates) > 0 {
+			candidate := resp.Candidates[0]
+			if candidate.Content != nil {
+				for _, part := range candidate.Content.Parts {
+					if part.Text != "" {
+						fullContent.WriteString(part.Text)
+						s.emit(llm.Event{Type: llm.EventDelta, Data: &llm.DeltaData{Content: part.Text}})
+					}
+					if part.FunctionCall != nil {
+						functionCalls = append(functionCalls, part.FunctionCall)
+					}
+				}
+			}
+		}
+	}
+	if fullContent.Len() > 0 {
+		s.emit(llm.Event{Type: llm.EventMessage, Data: &llm.MessageData{Content: fullContent.String()}})
+	}
+	if len(functionCalls) > 0 {
+		return s.dispatchToolCalls(functionCalls), true
+	}
+	return nil, false
+}
+
+func (s *Session) runNonStreamingStep(ctx context.Context, parts []genai.Part) ([]genai.Part, bool) {
+	resp, err := s.chat.SendMessage(ctx, parts...)
+	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			s.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: err.Error()}})
+		}
+		return nil, false
+	}
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
+		return nil, false
+	}
+	var functionCalls []*genai.FunctionCall
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if part.Text != "" {
+			s.emit(llm.Event{Type: llm.EventMessage, Data: &llm.MessageData{Content: part.Text}})
+		}
+		if part.FunctionCall != nil {
+			functionCalls = append(functionCalls, part.FunctionCall)
+		}
+	}
+	if len(functionCalls) > 0 {
+		return s.dispatchToolCalls(functionCalls), true
+	}
+	return nil, false
+}
+
+func (s *Session) dispatchToolCalls(functionCalls []*genai.FunctionCall) []genai.Part {
+	var parts []genai.Part
+	for _, fc := range functionCalls {
+		parts = append(parts, s.handleToolCall(fc))
+	}
+	return parts
 }
 
 func (s *Session) handleToolCall(tc *genai.FunctionCall) genai.Part {
