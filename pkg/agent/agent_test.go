@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -1234,75 +1235,71 @@ func TestDispatchUXCommandUnknown(t *testing.T) {
 	}
 }
 
+func writeTestFile(t *testing.T, path string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertContains(t *testing.T, s, substr string) {
+	t.Helper()
+	if !strings.Contains(s, substr) {
+		t.Errorf("expected output to contain %q", substr)
+	}
+}
+
+func assertNotContains(t *testing.T, s, substr string) {
+	t.Helper()
+	if strings.Contains(s, substr) {
+		t.Errorf("expected output not to contain %q", substr)
+	}
+}
+
 // TestBuildAttachmentContent covers the WP-05 safety limits.
 func TestBuildAttachmentContent(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	smallFile := filepath.Join(tmpDir, "small.txt")
-	if err := os.WriteFile(smallFile, []byte("hello world"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeTestFile(t, smallFile, []byte("hello world"))
 
 	binaryFile := filepath.Join(tmpDir, "binary.bin")
-	if err := os.WriteFile(binaryFile, []byte{0x7f, 0x45, 0x4c, 0x46, 0x00, 0x01}, 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeTestFile(t, binaryFile, []byte{0x7f, 0x45, 0x4c, 0x46, 0x00, 0x01})
 
 	largeFile := filepath.Join(tmpDir, "large.txt")
-	if err := os.WriteFile(largeFile, make([]byte, maxAttachmentFileSize+1), 0600); err != nil {
-		t.Fatal(err)
+	writeTestFile(t, largeFile, make([]byte, maxAttachmentFileSize+1))
+
+	// Three files of 400 KB each (< 512 KB per-file limit).
+	// First two fit (800 KB < 1 MB); third pushes total to 1.2 MB and is excluded.
+	payload := bytes.Repeat([]byte{'a'}, 400*1024)
+	f1 := filepath.Join(tmpDir, "big1.txt")
+	f2 := filepath.Join(tmpDir, "big2.txt")
+	f3 := filepath.Join(tmpDir, "big3.txt")
+	for _, f := range []string{f1, f2, f3} {
+		writeTestFile(t, f, payload)
 	}
 
 	t.Run("small text file included", func(t *testing.T) {
 		got := buildAttachmentContent([]string{smallFile}, OutputJSON)
-		if !strings.Contains(got, "hello world") {
-			t.Errorf("expected small file content, got: %q", got)
-		}
+		assertContains(t, got, "hello world")
 	})
 
 	t.Run("binary file excluded", func(t *testing.T) {
 		got := buildAttachmentContent([]string{binaryFile}, OutputJSON)
-		if strings.Contains(got, "\x00") {
-			t.Error("binary file content should not appear in output")
-		}
-		if strings.Contains(got, "binary.bin") {
-			t.Error("binary file name should not appear when excluded")
-		}
+		assertNotContains(t, got, "\x00")
+		assertNotContains(t, got, "binary.bin")
 	})
 
 	t.Run("large file excluded", func(t *testing.T) {
 		got := buildAttachmentContent([]string{largeFile}, OutputJSON)
-		if strings.Contains(got, "large.txt") {
-			t.Error("large file name should not appear when excluded")
-		}
+		assertNotContains(t, got, "large.txt")
 	})
 
 	t.Run("cumulative limit respected", func(t *testing.T) {
-		// Three files of 400 KB each (< 512 KB per-file limit).
-		// First two fit (800 KB < 1 MB); third pushes total to 1.2 MB and is excluded.
-		const fileSize = 400 * 1024
-		payload := make([]byte, fileSize)
-		for i := range payload {
-			payload[i] = 'a'
-		}
-		f1 := filepath.Join(tmpDir, "big1.txt")
-		f2 := filepath.Join(tmpDir, "big2.txt")
-		f3 := filepath.Join(tmpDir, "big3.txt")
-		for _, f := range []string{f1, f2, f3} {
-			if err := os.WriteFile(f, payload, 0600); err != nil {
-				t.Fatal(err)
-			}
-		}
 		got := buildAttachmentContent([]string{f1, f2, f3}, OutputJSON)
-		if !strings.Contains(got, "big1.txt") {
-			t.Error("first file should be included")
-		}
-		if !strings.Contains(got, "big2.txt") {
-			t.Error("second file should be included")
-		}
-		if strings.Contains(got, "big3.txt") {
-			t.Error("third file should be excluded by cumulative limit")
-		}
+		assertContains(t, got, "big1.txt")
+		assertContains(t, got, "big2.txt")
+		assertNotContains(t, got, "big3.txt")
 	})
 }
 

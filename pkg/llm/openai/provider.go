@@ -167,6 +167,20 @@ func (s *Session) runCompletionLoop(ctx context.Context) {
 	}
 }
 
+func (s *Session) processStreamChunk(resp goopenai.ChatCompletionStreamResponse, fullContent *strings.Builder, toolCalls []goopenai.ToolCall) []goopenai.ToolCall {
+	if len(resp.Choices) > 0 {
+		delta := resp.Choices[0].Delta
+		if delta.Content != "" {
+			fullContent.WriteString(delta.Content)
+			s.emit(llm.Event{Type: llm.EventDelta, Data: &llm.DeltaData{Content: delta.Content}})
+		}
+		for _, tc := range delta.ToolCalls {
+			toolCalls = mergeToolCallChunk(toolCalls, tc)
+		}
+	}
+	return toolCalls
+}
+
 func (s *Session) runStreamingStep(ctx context.Context, req goopenai.ChatCompletionRequest) bool {
 	stream, err := s.client.CreateChatCompletionStream(ctx, req)
 	if err != nil {
@@ -188,16 +202,7 @@ func (s *Session) runStreamingStep(ctx context.Context, req goopenai.ChatComplet
 			}
 			return false
 		}
-		if len(resp.Choices) > 0 {
-			delta := resp.Choices[0].Delta
-			if delta.Content != "" {
-				fullContent.WriteString(delta.Content)
-				s.emit(llm.Event{Type: llm.EventDelta, Data: &llm.DeltaData{Content: delta.Content}})
-			}
-			for _, tc := range delta.ToolCalls {
-				toolCalls = mergeToolCallChunk(toolCalls, tc)
-			}
-		}
+		toolCalls = s.processStreamChunk(resp, &fullContent, toolCalls)
 	}
 	s.messages = append(s.messages, goopenai.ChatCompletionMessage{
 		Role:      goopenai.ChatMessageRoleAssistant,
