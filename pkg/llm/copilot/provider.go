@@ -172,44 +172,48 @@ func (s *Session) SendPrompt(ctx context.Context, prompt string) error {
 	return err
 }
 
-func (s *Session) On(handler func(llm.Event)) {
-	s.session.On(func(sdkEvent sdk.SessionEvent) {
-		event := llm.Event{}
-		switch sdkEvent.Type {
-		case "assistant.message":
-			event.Type = llm.EventMessage
-			if d, ok := sdkEvent.Data.(*sdk.AssistantMessageData); ok {
-				event.Data = &llm.MessageData{Content: d.Content}
-			}
-		case "assistant.message_delta":
-			event.Type = llm.EventDelta
-			if d, ok := sdkEvent.Data.(*sdk.AssistantMessageDeltaData); ok {
-				event.Data = &llm.DeltaData{Content: d.DeltaContent}
-			}
-		case "session.error":
-			event.Type = llm.EventError
-			if d, ok := sdkEvent.Data.(*sdk.SessionErrorData); ok {
-				event.Data = &llm.ErrorData{Message: d.Message}
-			}
-		case "session.idle":
-			event.Type = llm.EventIdle
-			event.Data = nil
-		case "assistant.usage":
-			event.Type = llm.EventUsage
-			if d, ok := sdkEvent.Data.(*sdk.AssistantUsageData); ok && d.QuotaSnapshots != nil {
-				if snapshot, exists := d.QuotaSnapshots["premium_interactions"]; exists {
-					event.Data = &llm.UsageData{
-						QuotaPercentage: snapshot.RemainingPercentage,
-						QuotaUnlimited:  snapshot.IsUnlimitedEntitlement,
-						QuotaUsed:       snapshot.UsedRequests,
-						QuotaTotal:      snapshot.EntitlementRequests,
-					}
+func convertSDKEvent(sdkEvent sdk.SessionEvent) (llm.Event, bool) {
+	event := llm.Event{}
+	switch sdkEvent.Type {
+	case "assistant.message":
+		event.Type = llm.EventMessage
+		if d, ok := sdkEvent.Data.(*sdk.AssistantMessageData); ok {
+			event.Data = &llm.MessageData{Content: d.Content}
+		}
+	case "assistant.message_delta":
+		event.Type = llm.EventDelta
+		if d, ok := sdkEvent.Data.(*sdk.AssistantMessageDeltaData); ok {
+			event.Data = &llm.DeltaData{Content: d.DeltaContent}
+		}
+	case "session.error":
+		event.Type = llm.EventError
+		if d, ok := sdkEvent.Data.(*sdk.SessionErrorData); ok {
+			event.Data = &llm.ErrorData{Message: d.Message}
+		}
+	case "session.idle":
+		event.Type = llm.EventIdle
+	case "assistant.usage":
+		event.Type = llm.EventUsage
+		if d, ok := sdkEvent.Data.(*sdk.AssistantUsageData); ok && d.QuotaSnapshots != nil {
+			if snapshot, exists := d.QuotaSnapshots["premium_interactions"]; exists {
+				event.Data = &llm.UsageData{
+					QuotaPercentage: snapshot.RemainingPercentage,
+					QuotaUnlimited:  snapshot.IsUnlimitedEntitlement,
+					QuotaUsed:       snapshot.UsedRequests,
+					QuotaTotal:      snapshot.EntitlementRequests,
 				}
 			}
-		default:
-			// Unhandled event
-			return
 		}
-		handler(event)
+	default:
+		return event, false
+	}
+	return event, true
+}
+
+func (s *Session) On(handler func(llm.Event)) {
+	s.session.On(func(sdkEvent sdk.SessionEvent) {
+		if event, ok := convertSDKEvent(sdkEvent); ok {
+			handler(event)
+		}
 	})
 }

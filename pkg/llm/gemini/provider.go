@@ -59,6 +59,26 @@ func jsonTypeToGenAI(t string) genai.Type {
 	}
 }
 
+func parseProperties(raw map[string]any) map[string]*genai.Schema {
+	result := make(map[string]*genai.Schema)
+	for k, v := range raw {
+		if vMap, ok := v.(map[string]any); ok {
+			result[k] = convertJSONSchemaToType(vMap)
+		}
+	}
+	return result
+}
+
+func parseRequired(raw []any) []string {
+	var result []string
+	for _, req := range raw {
+		if s, ok := req.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
 func convertJSONSchemaToType(schema map[string]any) *genai.Schema {
 	if schema == nil {
 		return nil
@@ -76,19 +96,10 @@ func convertJSONSchemaToType(schema map[string]any) *genai.Schema {
 		s.Items = convertJSONSchemaToType(items)
 	}
 	if properties, ok := schema["properties"].(map[string]any); ok {
-		s.Properties = make(map[string]*genai.Schema)
-		for k, v := range properties {
-			if vMap, isMap := v.(map[string]any); isMap {
-				s.Properties[k] = convertJSONSchemaToType(vMap)
-			}
-		}
+		s.Properties = parseProperties(properties)
 	}
 	if required, ok := schema["required"].([]any); ok {
-		for _, req := range required {
-			if reqStr, isStr := req.(string); isStr {
-				s.Required = append(s.Required, reqStr)
-			}
-		}
+		s.Required = parseRequired(required)
 	}
 	return s
 }
@@ -209,6 +220,18 @@ func (s *Session) runCompletionLoop(ctx context.Context, prompt string) {
 	}
 }
 
+func processCandidateParts(parts []*genai.Part, fullContent *strings.Builder, functionCalls *[]*genai.FunctionCall, emit func(llm.Event)) {
+	for _, part := range parts {
+		if part.Text != "" {
+			fullContent.WriteString(part.Text)
+			emit(llm.Event{Type: llm.EventDelta, Data: &llm.DeltaData{Content: part.Text}})
+		}
+		if part.FunctionCall != nil {
+			*functionCalls = append(*functionCalls, part.FunctionCall)
+		}
+	}
+}
+
 func (s *Session) runStreamingStep(ctx context.Context, parts []genai.Part) ([]genai.Part, bool) {
 	stream := s.chat.SendMessageStream(ctx, parts...)
 	var fullContent strings.Builder
@@ -220,19 +243,8 @@ func (s *Session) runStreamingStep(ctx context.Context, parts []genai.Part) ([]g
 			}
 			return nil, false
 		}
-		if len(resp.Candidates) > 0 {
-			candidate := resp.Candidates[0]
-			if candidate.Content != nil {
-				for _, part := range candidate.Content.Parts {
-					if part.Text != "" {
-						fullContent.WriteString(part.Text)
-						s.emit(llm.Event{Type: llm.EventDelta, Data: &llm.DeltaData{Content: part.Text}})
-					}
-					if part.FunctionCall != nil {
-						functionCalls = append(functionCalls, part.FunctionCall)
-					}
-				}
-			}
+		if len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil {
+			processCandidateParts(resp.Candidates[0].Content.Parts, &fullContent, &functionCalls, s.emit)
 		}
 	}
 	if fullContent.Len() > 0 {

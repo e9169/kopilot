@@ -1752,6 +1752,12 @@ func estimateTokens(text string) int {
 	return len(text) / 4
 }
 
+func warnSkip(outputFormat OutputFormat, format string, args ...any) {
+	if !isJSONOutput(outputFormat) {
+		fmt.Printf(format, args...)
+	}
+}
+
 // buildAttachmentContent reads each attachment and returns the combined text to
 // append to the prompt. Files that are too large, exceed the cumulative limit,
 // or contain binary content are skipped with a user-facing warning.
@@ -1766,15 +1772,11 @@ func buildAttachmentContent(paths []string, outputFormat OutputFormat) string {
 			continue
 		}
 		if fi.Size() > maxAttachmentFileSize {
-			if !isJSONOutput(outputFormat) {
-				fmt.Printf("  ⚠️  Skipped %s: file too large (%s, limit 512 KB)\n", name, formatBytes(fi.Size()))
-			}
+			warnSkip(outputFormat, "  ⚠️  Skipped %s: file too large (%s, limit 512 KB)\n", name, formatBytes(fi.Size()))
 			continue
 		}
 		if totalBytes+fi.Size() > maxAttachmentTotalSize {
-			if !isJSONOutput(outputFormat) {
-				fmt.Printf("  ⚠️  Skipped %s: total attachment limit reached (1 MB)\n", name)
-			}
+			warnSkip(outputFormat, "  ⚠️  Skipped %s: total attachment limit reached (1 MB)\n", name)
 			continue
 		}
 		content, err := os.ReadFile(path)
@@ -1782,9 +1784,7 @@ func buildAttachmentContent(paths []string, outputFormat OutputFormat) string {
 			continue
 		}
 		if bytes.IndexByte(content, 0) >= 0 {
-			if !isJSONOutput(outputFormat) {
-				fmt.Printf("  ⚠️  Skipped %s: binary file not supported for inline injection\n", name)
-			}
+			warnSkip(outputFormat, "  ⚠️  Skipped %s: binary file not supported for inline injection\n", name)
 			continue
 		}
 		totalBytes += fi.Size()
