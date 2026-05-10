@@ -42,4 +42,5 @@ jobs:
       - name: Run gosec
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec ./... || true
+          # Fail on high and critical severity findings; medium and below are reported but non-blocking.
+          gosec -severity high -confidence medium -nosec ./...
