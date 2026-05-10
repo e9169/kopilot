@@ -556,6 +556,72 @@ Use this template after each package:
 - Follow-up required:
 	- None
 
+- Package id: WP-07 Provider and Session Contract Tests
+- Date: 2026-05-10
+- Commit sha: 75e3d73
+- Files changed:
+	- pkg/llm/provider_smoke_test.go
+	- pkg/agent/agent_test.go
+- Acceptance criteria status: passed
+- Verification commands run:
+	- go test ./pkg/agent ./pkg/llm
+- Notes:
+	- Added stubSession and fakeSession/fakeProvider helpers for credential-free testing.
+	- EventType constants distinctness and ordering test in pkg/llm.
+	- SessionConfig.ExtraConfig MCP preservation test at abstraction boundary.
+	- setupSessionEventHandler routing verified for all five EventTypes including isIdle flip.
+	- switchToModel verified to Disconnect old session and return provider's new session.
+	- createSessionWithModel verified to always include MCPServers key in ExtraConfig.
+- Follow-up required:
+	- None
+
+- Package id: WP-08 Documentation Synchronization
+- Date: 2026-05-10
+- Commit sha: e4b9faa
+- Files changed:
+	- README.md
+	- docs/INSTALLATION.md
+- Acceptance criteria status: passed
+- Verification commands run:
+	- go test ./...
+- Notes:
+	- README: copilot-sdk version updated v0.1.30→v0.2.2; k8s v0.35.2→v0.35.3; go-openai and genai added to dependency list.
+	- README: Prerequisites and Installation sections rewritten as three-provider auth matrix (Copilot, OpenAI, Gemini).
+	- INSTALLATION.md: Next Steps rewritten for multi-provider; "requires GitHub Copilot subscription" wording removed.
+- Follow-up required:
+	- None
+
+- Package id: WP-09 CI and Security Workflow Hardening
+- Date: 2026-05-10
+- Commit sha: 6a8ddd9
+- Files changed:
+	- .github/workflows/gosec.yml
+- Acceptance criteria status: passed
+- Verification commands run:
+	- go test ./...
+- Notes:
+	- Removed '|| true' unconditional pass from gosec run step.
+	- Added -severity high -confidence medium flags so the job fails on high/critical findings and reports lower severity as informational.
+- Follow-up required:
+	- None
+
+- Package id: WP-10 Repository Hygiene Cleanup
+- Date: 2026-05-10
+- Commit sha: N/A (files were never tracked in git)
+- Files changed:
+	- refactor.py (deleted from filesystem)
+	- scratch_fix_tests.py (deleted from filesystem)
+	- scratch_fix_json_test.py (deleted from filesystem)
+- Acceptance criteria status: passed
+- Verification commands run:
+	- go test ./...
+- Notes:
+	- All three scratch scripts were untracked (never committed), so deletion produces no git diff.
+	- Confirmed no Makefile, workflow, or package references them.
+	- Repository root is clean of transient development files.
+- Follow-up required:
+	- None
+
 ## Ready To Execute Checklist
 
 - [x] Baseline tests pass
@@ -565,8 +631,8 @@ Use this template after each package:
 - [x] WP-04 complete
 - [x] WP-05 complete
 - [x] WP-06 complete
-- [ ] WP-07 complete
-- [ ] WP-08 complete
-- [ ] WP-09 complete
-- [ ] WP-10 complete
-- [ ] Final integration gate pass
+- [x] WP-07 complete
+- [x] WP-08 complete
+- [x] WP-09 complete
+- [x] WP-10 complete
+- [x] Final integration gate pass
