@@ -1235,6 +1235,11 @@ func TestDispatchUXCommandUnknown(t *testing.T) {
 	}
 }
 
+func TestWarnSkip_NonJSONDoesNotPanic(t *testing.T) {
+	// Exercises the fmt.Printf branch; output goes to stdout (not captured).
+	warnSkip(OutputText, "  skipped %s\n", "file.txt")
+}
+
 func writeTestFile(t *testing.T, path string, data []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, data, 0600); err != nil {

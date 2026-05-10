@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/e9169/kopilot/pkg/llm"
@@ -199,5 +200,83 @@ func TestMergeToolCallChunk_AccumulatesArguments(t *testing.T) {
 	want := `{"k":"v"}`
 	if toolCalls[0].Function.Arguments != want {
 		t.Fatalf("Arguments = %q, want %q", toolCalls[0].Function.Arguments, want)
+	}
+}
+
+func TestHandleToolCall_KnownTool(t *testing.T) {
+	s := &Session{
+		toolMap: map[string]llm.Tool{
+			"echo": {
+				Name: "echo",
+				Handler: func(params any, inv llm.ToolInvocation) (any, error) {
+					return map[string]any{"echoed": true}, nil
+				},
+			},
+		},
+		messages: []goopenai.ChatCompletionMessage{},
+		handlers: []func(llm.Event){},
+	}
+	tc := goopenai.ToolCall{
+		ID:   "call-1",
+		Type: goopenai.ToolTypeFunction,
+		Function: goopenai.FunctionCall{Name: "echo", Arguments: `{"x":1}`},
+	}
+	s.handleToolCall(tc)
+	if len(s.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(s.messages))
+	}
+	if s.messages[0].Role != goopenai.ChatMessageRoleTool {
+		t.Errorf("role = %q, want tool", s.messages[0].Role)
+	}
+	if s.messages[0].ToolCallID != "call-1" {
+		t.Errorf("ToolCallID = %q, want call-1", s.messages[0].ToolCallID)
+	}
+}
+
+func TestHandleToolCall_UnknownTool(t *testing.T) {
+	s := &Session{
+		toolMap:  map[string]llm.Tool{},
+		messages: []goopenai.ChatCompletionMessage{},
+		handlers: []func(llm.Event){},
+	}
+	tc := goopenai.ToolCall{
+		ID:   "call-2",
+		Type: goopenai.ToolTypeFunction,
+		Function: goopenai.FunctionCall{Name: "missing", Arguments: `{}`},
+	}
+	s.handleToolCall(tc)
+	if len(s.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(s.messages))
+	}
+	if !strings.Contains(s.messages[0].Content, "Unknown tool") {
+		t.Errorf("expected 'Unknown tool' in content, got %q", s.messages[0].Content)
+	}
+}
+
+func TestHandleToolCall_BrokenJSON(t *testing.T) {
+	called := false
+	s := &Session{
+		toolMap: map[string]llm.Tool{
+			"t": {
+				Name: "t",
+				Handler: func(params any, inv llm.ToolInvocation) (any, error) {
+					called = true
+					return "ok", nil
+				},
+			},
+		},
+		messages: []goopenai.ChatCompletionMessage{},
+		handlers: []func(llm.Event){},
+	}
+	tc := goopenai.ToolCall{
+		ID:       "call-3",
+		Function: goopenai.FunctionCall{Name: "t", Arguments: `not-json`},
+	}
+	s.handleToolCall(tc)
+	if !called {
+		t.Error("handler should be called even when arguments JSON is malformed")
+	}
+	if len(s.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(s.messages))
 	}
 }
