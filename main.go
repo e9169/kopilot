@@ -140,8 +140,9 @@ func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, ou
 	// Set version in agent package for display
 	agent.AppVersion = version
 
-	// Verify kubeconfig exists
-	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
+	// Verify kubeconfig exists. The path comes from a CLI flag/env that the
+	// operator controls; os.Stat only checks existence and does not expose content.
+	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) { // #nosec G703
 		return fmt.Errorf("kubeconfig not found at %s: %w", kubeconfigPath, err)
 	}
 
