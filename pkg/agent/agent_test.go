@@ -1336,3 +1336,122 @@ func TestKubectlTimeout(t *testing.T) {
 		}
 	})
 }
+
+// ── WP-07: provider abstraction lifecycle and regression coverage ─────────────
+
+// fakeSession is a minimal llm.Session stub for WP-07 contract tests.
+type fakeSession struct {
+	disconnected bool
+	handlers     []func(llm.Event)
+}
+
+func (s *fakeSession) Disconnect() error                             { s.disconnected = true; return nil }
+func (s *fakeSession) SendPrompt(_ context.Context, _ string) error  { return nil }
+func (s *fakeSession) On(h func(llm.Event))                          { s.handlers = append(s.handlers, h) }
+func (s *fakeSession) emit(e llm.Event) {
+	for _, h := range s.handlers {
+		h(e)
+	}
+}
+
+// fakeProvider is a minimal llm.Provider that returns a pre-built fakeSession.
+type fakeProvider struct {
+	session    *fakeSession
+	lastConfig *llm.SessionConfig
+}
+
+func (p *fakeProvider) Name() string { return "fake" }
+func (p *fakeProvider) Start(_ context.Context) error { return nil }
+func (p *fakeProvider) Stop() error                   { return nil }
+func (p *fakeProvider) CreateSession(_ context.Context, cfg *llm.SessionConfig) (llm.Session, error) {
+	p.lastConfig = cfg
+	return p.session, nil
+}
+
+// TestSetupSessionEventHandlerRouting verifies that each normalized EventType
+// is dispatched by setupSessionEventHandler without panicking.
+func TestSetupSessionEventHandlerRouting(t *testing.T) {
+	sess := &fakeSession{}
+	isIdle := false
+	state := &agentState{outputFormat: OutputJSON}
+
+	setupSessionEventHandler(sess, &isIdle, state)
+
+	// EventIdle must flip the idle flag.
+	sess.emit(llm.Event{Type: llm.EventIdle})
+	if !isIdle {
+		t.Error("EventIdle should set isIdle=true")
+	}
+
+	// All other events must not panic regardless of Data contents.
+	sess.emit(llm.Event{Type: llm.EventMessage, Data: &llm.MessageData{Content: "hello"}})
+	sess.emit(llm.Event{Type: llm.EventDelta, Data: &llm.DeltaData{Content: "chunk"}})
+	sess.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: "boom"}})
+	sess.emit(llm.Event{Type: llm.EventUsage, Data: &llm.UsageData{QuotaPercentage: 42}})
+}
+
+// TestSwitchToModelDisconnectsOldSession verifies that switchToModel calls
+// Disconnect on the previous session and returns the provider's new session.
+func TestSwitchToModelDisconnectsOldSession(t *testing.T) {
+	k8sProvider := newTestK8sProvider(t)
+
+	oldSess := &fakeSession{}
+	newSess := &fakeSession{}
+	provider := &fakeProvider{session: newSess}
+
+	isIdle := true // pre-set so waitForIdle returns immediately
+	state := &agentState{
+		mode:          ModeReadOnly,
+		outputFormat:  OutputJSON,
+		selectedAgent: AgentDefault,
+		mcpConfigPath: filepath.Join(t.TempDir(), "mcp.json"),
+	}
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		provider:    provider,
+		k8sProvider: k8sProvider,
+		state:       state,
+		isIdle:      &isIdle,
+	}
+
+	got, err := switchToModel(deps, oldSess, "test-model")
+	if err != nil {
+		t.Fatalf("switchToModel returned error: %v", err)
+	}
+	if !oldSess.disconnected {
+		t.Error("switchToModel should call Disconnect on the old session")
+	}
+	if got != newSess {
+		t.Error("switchToModel should return the session from provider.CreateSession")
+	}
+}
+
+// TestCreateSessionWithModelIncludesMCPServers verifies that createSessionWithModel
+// always includes the MCPServers key in ExtraConfig, even when the config file is absent.
+func TestCreateSessionWithModelIncludesMCPServers(t *testing.T) {
+	k8sProvider := newTestK8sProvider(t)
+
+	sess := &fakeSession{}
+	provider := &fakeProvider{session: sess}
+
+	state := &agentState{
+		mode:          ModeReadOnly,
+		outputFormat:  OutputJSON,
+		selectedAgent: AgentDefault,
+		mcpConfigPath: filepath.Join(t.TempDir(), "mcp.json"), // absent → empty list
+	}
+
+	_, err := createSessionWithModel(context.Background(), provider, k8sProvider, state, "some-model")
+	if err != nil {
+		t.Fatalf("createSessionWithModel returned error: %v", err)
+	}
+	if provider.lastConfig == nil {
+		t.Fatal("provider.CreateSession was never called")
+	}
+	if _, ok := provider.lastConfig.ExtraConfig["MCPServers"]; !ok {
+		t.Error("SessionConfig.ExtraConfig must contain MCPServers key")
+	}
+	if provider.lastConfig.Model != "some-model" {
+		t.Errorf("Model = %q, want some-model", provider.lastConfig.Model)
+	}
+}
