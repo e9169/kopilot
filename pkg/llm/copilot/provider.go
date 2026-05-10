@@ -44,60 +44,53 @@ func parseMCPServers(extra map[string]any) map[string]sdk.MCPServerConfig {
 	if extra == nil {
 		return nil
 	}
-
 	raw, ok := extra["MCPServers"]
 	if !ok || raw == nil {
 		return nil
 	}
-
 	if typed, ok := raw.(map[string]sdk.MCPServerConfig); ok {
 		return typed
 	}
-
 	rawMap, ok := raw.(map[string]any)
 	if !ok {
 		return nil
 	}
-
 	out := make(map[string]sdk.MCPServerConfig, len(rawMap))
 	for name, cfgAny := range rawMap {
-		switch cfg := cfgAny.(type) {
-		case sdk.MCPServerConfig:
-			out[name] = cfg
-		case map[string]string:
-			entry := sdk.MCPServerConfig{}
-			if typ, exists := cfg["type"]; exists && typ != "" {
-				entry["type"] = typ
-			}
-			if url, exists := cfg["url"]; exists && url != "" {
-				entry["url"] = url
-			}
-			if len(entry) > 0 {
-				out[name] = entry
-			}
-		case map[string]any:
-			entry := sdk.MCPServerConfig{}
-			if typAny, exists := cfg["type"]; exists {
-				if typ, isString := typAny.(string); isString && typ != "" {
-					entry["type"] = typ
-				}
-			}
-			if urlAny, exists := cfg["url"]; exists {
-				if url, isString := urlAny.(string); isString && url != "" {
-					entry["url"] = url
-				}
-			}
-			if len(entry) > 0 {
-				out[name] = entry
-			}
+		if entry, ok := parseMCPServerEntry(cfgAny); ok {
+			out[name] = entry
 		}
 	}
-
 	if len(out) == 0 {
 		return nil
 	}
-
 	return out
+}
+
+func parseMCPServerEntry(cfgAny any) (sdk.MCPServerConfig, bool) {
+	switch cfg := cfgAny.(type) {
+	case sdk.MCPServerConfig:
+		return cfg, true
+	case map[string]string:
+		entry := sdk.MCPServerConfig{}
+		if v := cfg["type"]; v != "" {
+			entry["type"] = v
+		}
+		if v := cfg["url"]; v != "" {
+			entry["url"] = v
+		}
+		return entry, len(entry) > 0
+	case map[string]any:
+		entry := sdk.MCPServerConfig{}
+		if v, ok := cfg["type"].(string); ok && v != "" {
+			entry["type"] = v
+		}
+		if v, ok := cfg["url"].(string); ok && v != "" {
+			entry["url"] = v
+		}
+		return entry, len(entry) > 0
+	}
+	return nil, false
 }
 
 func (p *Provider) CreateSession(ctx context.Context, config *llm.SessionConfig) (llm.Session, error) {

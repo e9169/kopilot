@@ -1345,9 +1345,9 @@ type fakeSession struct {
 	handlers     []func(llm.Event)
 }
 
-func (s *fakeSession) Disconnect() error                             { s.disconnected = true; return nil }
-func (s *fakeSession) SendPrompt(_ context.Context, _ string) error  { return nil }
-func (s *fakeSession) On(h func(llm.Event))                          { s.handlers = append(s.handlers, h) }
+func (s *fakeSession) Disconnect() error                            { s.disconnected = true; return nil }
+func (s *fakeSession) SendPrompt(_ context.Context, _ string) error { return nil }
+func (s *fakeSession) On(h func(llm.Event))                         { s.handlers = append(s.handlers, h) }
 func (s *fakeSession) emit(e llm.Event) {
 	for _, h := range s.handlers {
 		h(e)
@@ -1360,7 +1360,7 @@ type fakeProvider struct {
 	lastConfig *llm.SessionConfig
 }
 
-func (p *fakeProvider) Name() string { return "fake" }
+func (p *fakeProvider) Name() string                  { return "fake" }
 func (p *fakeProvider) Start(_ context.Context) error { return nil }
 func (p *fakeProvider) Stop() error                   { return nil }
 func (p *fakeProvider) CreateSession(_ context.Context, cfg *llm.SessionConfig) (llm.Session, error) {
