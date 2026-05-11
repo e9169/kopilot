@@ -217,8 +217,8 @@ func TestHandleToolCall_KnownTool(t *testing.T) {
 		handlers: []func(llm.Event){},
 	}
 	tc := goopenai.ToolCall{
-		ID:   "call-1",
-		Type: goopenai.ToolTypeFunction,
+		ID:       "call-1",
+		Type:     goopenai.ToolTypeFunction,
 		Function: goopenai.FunctionCall{Name: "echo", Arguments: `{"x":1}`},
 	}
 	s.handleToolCall(tc)
@@ -240,8 +240,8 @@ func TestHandleToolCall_UnknownTool(t *testing.T) {
 		handlers: []func(llm.Event){},
 	}
 	tc := goopenai.ToolCall{
-		ID:   "call-2",
-		Type: goopenai.ToolTypeFunction,
+		ID:       "call-2",
+		Type:     goopenai.ToolTypeFunction,
 		Function: goopenai.FunctionCall{Name: "missing", Arguments: `{}`},
 	}
 	s.handleToolCall(tc)
