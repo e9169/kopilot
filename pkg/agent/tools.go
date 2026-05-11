@@ -16,8 +16,9 @@ import (
 	"github.com/e9169/kopilot/pkg/llm"
 )
 
-// defineTools creates all the Kubernetes-related tools for the agent
-func defineTools(k8sProvider *k8s.Provider, state *agentState) []llm.Tool {
+// defineK8sTools returns the 6 Kubernetes operational tools.
+// Used by both the interactive REPL mode and --mcp-server mode.
+func defineK8sTools(k8sProvider *k8s.Provider, state *agentState) []llm.Tool {
 	tools := []llm.Tool{
 		defineListClustersTool(k8sProvider, state),
 		defineGetClusterStatusTool(k8sProvider, state),
@@ -25,17 +26,26 @@ func defineTools(k8sProvider *k8s.Provider, state *agentState) []llm.Tool {
 		defineCheckAllClustersTool(k8sProvider, state),
 		defineKubectlExecTool(k8sProvider, state),
 		defineSanitizeClusterTool(k8sProvider, state),
-		defineMCPListServersTool(state),
-		defineMCPAddServerTool(state),
-		defineMCPDeleteServerTool(state),
 	}
-	// Ensure all tool schemas are valid for all models/APIs.
-	// Most LLM APIs (OpenAI, Anthropic, Google, etc.) require object schemas
-	// to include a "properties" field even when there are no parameters.
 	for i := range tools {
 		tools[i] = fixEmptySchema(tools[i])
 	}
 	return tools
+}
+
+// defineTools returns all 9 tools: the 6 K8s tools plus the 3 MCP management tools.
+// Used by the interactive REPL mode only.
+func defineTools(k8sProvider *k8s.Provider, state *agentState) []llm.Tool {
+	tools := defineK8sTools(k8sProvider, state)
+	mcpTools := []llm.Tool{
+		defineMCPListServersTool(state),
+		defineMCPAddServerTool(state),
+		defineMCPDeleteServerTool(state),
+	}
+	for i := range mcpTools {
+		mcpTools[i] = fixEmptySchema(mcpTools[i])
+	}
+	return append(tools, mcpTools...)
 }
 
 // fixEmptySchema ensures tools with no parameters have a valid JSON schema.
