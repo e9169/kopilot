@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -36,6 +37,7 @@ func main() {
 	agentName := flag.String("agent", string(agent.AgentDefault), "Specialist agent persona: default, debugger, security, optimizer, gitops")
 	mcpConfig := flag.String("mcp-config", "", "Path to MCP server config file (default: ~/.kopilot/mcp.json)")
 	aiProvider := flag.String("ai-provider", "copilot", "AI provider to use: copilot, openai, gemini")
+	mcpServer := flag.Bool("mcp-server", false, "Run as a stdio MCP server (for Claude Code and other MCP clients)")
 	flag.BoolVar(verbose, "v", false, "Enable verbose logging (shorthand)")
 
 	flag.Usage = func() {
@@ -99,9 +101,19 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  GEMINI_API_KEY=AIza... kopilot --ai-provider=gemini\n")
 		fmt.Fprintf(os.Stderr, "  kopilot --mcp-config ./mcp.json                  # custom MCP server config\n")
 		fmt.Fprintf(os.Stderr, "  kopilot -v                                        # verbose logging\n")
+		fmt.Fprintf(os.Stderr, "\nMCP Server Mode:\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --mcp-server                              # stdio MCP server (for Claude Code)\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --mcp-server --context production         # specific kube context\n")
 	}
 
 	flag.Parse()
+
+	if *mcpServer {
+		if err := runMCPServer(*kubeconfig, *contextName, *verbose); err != nil {
+			log.Fatalf("MCP server error: %v", err)
+		}
+		os.Exit(0)
+	}
 
 	if *showVersion {
 		fmt.Printf("kopilot version %s\n", version)
@@ -176,4 +188,24 @@ func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, ou
 	}
 
 	return nil
+}
+
+func runMCPServer(kubeconfigPath, contextName string, verbose bool) error {
+	agent.AppVersion = version
+	if !verbose {
+		log.SetOutput(io.Discard)
+	}
+	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) { // #nosec G703
+		return fmt.Errorf("kubeconfig not found at %s: %w", kubeconfigPath, err)
+	}
+	k8sProvider, err := k8s.NewProvider(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize kubernetes provider: %w", err)
+	}
+	if contextName != "" {
+		if err := k8sProvider.SetCurrentContext(contextName); err != nil {
+			return fmt.Errorf("failed to set context: %w", err)
+		}
+	}
+	return agent.RunMCPServer(k8sProvider)
 }
