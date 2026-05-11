@@ -37,7 +37,7 @@ func main() {
 	agentName := flag.String("agent", string(agent.AgentDefault), "Specialist agent persona: default, debugger, security, optimizer, gitops")
 	mcpConfig := flag.String("mcp-config", "", "Path to MCP server config file (default: ~/.kopilot/mcp.json)")
 	aiProvider := flag.String("ai-provider", "copilot", "AI provider to use: copilot, openai, gemini")
-	mcpServer := flag.Bool("mcp-server", false, "Run as a stdio MCP server (for Claude Code and other MCP clients)")
+	mcpServer := flag.Bool("mcp-server", false, "Run as a stdio MCP server (compatible with any MCP client)")
 	flag.BoolVar(verbose, "v", false, "Enable verbose logging (shorthand)")
 
 	flag.Usage = func() {
@@ -102,7 +102,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  kopilot --mcp-config ./mcp.json                  # custom MCP server config\n")
 		fmt.Fprintf(os.Stderr, "  kopilot -v                                        # verbose logging\n")
 		fmt.Fprintf(os.Stderr, "\nMCP Server Mode:\n")
-		fmt.Fprintf(os.Stderr, "  kopilot --mcp-server                              # stdio MCP server (for Claude Code)\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --mcp-server                              # stdio MCP server\n")
 		fmt.Fprintf(os.Stderr, "  kopilot --mcp-server --context production         # specific kube context\n")
 	}
 
