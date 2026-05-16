@@ -1,11 +1,33 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/e9169/kopilot/pkg/k8s"
 )
 
 const testKubeconfigFlag = "--kubeconfig"
+const testKubeconfig = `
+apiVersion: v1
+kind: Config
+current-context: test-context
+clusters:
+- name: test-cluster
+  cluster:
+    server: https://example.invalid
+contexts:
+- name: test-context
+  context:
+    cluster: test-cluster
+    user: test-user
+users:
+- name: test-user
+  user:
+    token: test-token
+`
 
 // TestValidateKubectlCommand tests kubectl command validation
 func TestValidateKubectlCommand(t *testing.T) {
@@ -121,6 +143,117 @@ func TestSanitizeKubectlArgs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHandleKubectlExecValidationBlocksBeforeProviderLookup(t *testing.T) {
+	originalRunner := runKubectlCommandFunc
+	t.Cleanup(func() { runKubectlCommandFunc = originalRunner })
+
+	runKubectlCommandFunc = func(args []string) ([]byte, error) {
+		t.Fatalf("kubectl runner should not be called for invalid args: %v", args)
+		return nil, nil
+	}
+
+	state := &agentState{mode: ModeReadOnly, outputFormat: OutputText}
+	result, err := handleKubectlExec(nil, state, KubectlExecParams{
+		Context: "missing-context",
+		Args:    []string{"get", "pods", "|", "cat"},
+	})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+
+	text, ok := result.(string)
+	if !ok {
+		t.Fatalf("validation result should be text, got %T", result)
+	}
+	for _, want := range []string{"validation failed", "potential command injection", "kubectl get pods | cat"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("validation result missing %q: %s", want, text)
+		}
+	}
+}
+
+func TestHandleKubectlExecValidationErrorJSON(t *testing.T) {
+	state := &agentState{mode: ModeReadOnly, outputFormat: OutputJSON}
+	result, err := handleKubectlExec(nil, state, KubectlExecParams{
+		Context: "missing-context",
+		Args:    []string{"delete", "pods", "--all"},
+	})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+
+	payload, ok := result.(KubectlExecResult)
+	if !ok {
+		t.Fatalf("validation result should be KubectlExecResult, got %T", result)
+	}
+	if payload.Cluster != "unknown" {
+		t.Errorf("Cluster = %q, want unknown", payload.Cluster)
+	}
+	if !strings.Contains(payload.Error, "validation failed") {
+		t.Errorf("Error should include validation failure, got %q", payload.Error)
+	}
+	if !strings.Contains(payload.Error, "bulk delete") {
+		t.Errorf("Error should include validation detail, got %q", payload.Error)
+	}
+}
+
+func TestHandleKubectlExecSanitizesArgsBeforeExecution(t *testing.T) {
+	provider := newTestK8sProvider(t)
+
+	originalRunner := runKubectlCommandFunc
+	t.Cleanup(func() { runKubectlCommandFunc = originalRunner })
+
+	var gotArgs []string
+	runKubectlCommandFunc = func(args []string) ([]byte, error) {
+		gotArgs = append([]string(nil), args...)
+		return []byte("pod/test\n"), nil
+	}
+
+	state := &agentState{mode: ModeReadOnly, outputFormat: OutputJSON}
+	result, err := handleKubectlExec(provider, state, KubectlExecParams{
+		Context: "test-context",
+		Args:    []string{"get", "pods", "--token", "secret-token", "-w", "--namespace=default"},
+	})
+	if err != nil {
+		t.Fatalf("handleKubectlExec returned error: %v", err)
+	}
+
+	payload, ok := result.(KubectlExecResult)
+	if !ok {
+		t.Fatalf("result should be KubectlExecResult, got %T", result)
+	}
+	if strings.Contains(payload.Command, "--token") || strings.Contains(payload.Command, "-w") {
+		t.Fatalf("displayed command was not sanitized: %q", payload.Command)
+	}
+
+	got := strings.Join(gotArgs, " ")
+	for _, blocked := range []string{"--token", "secret-token", "-w"} {
+		if strings.Contains(got, blocked) {
+			t.Errorf("execution args include unsafe arg %q: %v", blocked, gotArgs)
+		}
+	}
+	for _, want := range []string{"--context", "test-context", "get", "pods", "--namespace=default"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("execution args missing %q: %v", want, gotArgs)
+		}
+	}
+}
+
+func newTestK8sProvider(t *testing.T) *k8s.Provider {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	if err := os.WriteFile(path, []byte(testKubeconfig), 0o600); err != nil {
+		t.Fatalf("write kubeconfig: %v", err)
+	}
+
+	provider, err := k8s.NewProvider(path)
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	return provider
 }
 
 // TestAllowedCommands verifies the command whitelist

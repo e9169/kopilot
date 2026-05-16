@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -35,6 +36,8 @@ func main() {
 	outputFormat := flag.String("output", string(agent.OutputText), "Output format: text or json")
 	agentName := flag.String("agent", string(agent.AgentDefault), "Specialist agent persona: default, debugger, security, optimizer, gitops")
 	mcpConfig := flag.String("mcp-config", "", "Path to MCP server config file (default: ~/.kopilot/mcp.json)")
+	aiProvider := flag.String("ai-provider", "copilot", "AI provider to use: copilot, openai, gemini")
+	mcpServer := flag.Bool("mcp-server", false, "Run as a stdio MCP server (compatible with any MCP client)")
 	flag.BoolVar(verbose, "v", false, "Enable verbose logging (shorthand)")
 
 	flag.Usage = func() {
@@ -62,22 +65,55 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  /mcp list          List configured MCP servers\n")
 		fmt.Fprintf(os.Stderr, "  /mcp add <n> <url> Add an MCP server\n")
 		fmt.Fprintf(os.Stderr, "  /mcp delete <name> Remove an MCP server\n")
+		fmt.Fprintf(os.Stderr, "\nAI Providers:\n")
+		fmt.Fprintf(os.Stderr, "  copilot   GitHub Copilot (default)\n")
+		fmt.Fprintf(os.Stderr, "              Auth: Copilot CLI token (automatic when gh copilot is installed)\n")
+		fmt.Fprintf(os.Stderr, "              No extra environment variables required.\n")
+		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintf(os.Stderr, "  openai    OpenAI or any OpenAI-compatible API (Ollama, Azure OpenAI, Anthropic…)\n")
+		fmt.Fprintf(os.Stderr, "              OPENAI_API_KEY    API key (required; use 'none' for local models)\n")
+		fmt.Fprintf(os.Stderr, "              OPENAI_BASE_URL   Custom base URL (optional, for non-OpenAI backends)\n")
+		fmt.Fprintf(os.Stderr, "              Examples:\n")
+		fmt.Fprintf(os.Stderr, "                OPENAI_API_KEY=sk-... kopilot --ai-provider=openai\n")
+		fmt.Fprintf(os.Stderr, "                OPENAI_BASE_URL=http://localhost:11434/v1 kopilot --ai-provider=openai  # Ollama\n")
+		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintf(os.Stderr, "  gemini    Google Gemini (Gemini 1.5 / 2.0 / 2.5)\n")
+		fmt.Fprintf(os.Stderr, "              GEMINI_API_KEY    API key from https://ai.google.dev (recommended)\n")
+		fmt.Fprintf(os.Stderr, "              Alternatively, authenticate with Application Default Credentials:\n")
+		fmt.Fprintf(os.Stderr, "                gcloud auth application-default login\n")
+		fmt.Fprintf(os.Stderr, "              Example:\n")
+		fmt.Fprintf(os.Stderr, "                GEMINI_API_KEY=AIza... kopilot --ai-provider=gemini\n")
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
-		fmt.Fprintf(os.Stderr, "  KUBECONFIG    Path to kubeconfig file (default: ~/.kube/config)\n")
+		fmt.Fprintf(os.Stderr, "  KUBECONFIG        Path to kubeconfig file (default: ~/.kube/config)\n")
+		fmt.Fprintf(os.Stderr, "  OPENAI_API_KEY    API key for --ai-provider=openai\n")
+		fmt.Fprintf(os.Stderr, "  OPENAI_BASE_URL   Custom API base URL for OpenAI-compatible backends\n")
+		fmt.Fprintf(os.Stderr, "  GEMINI_API_KEY    API key for --ai-provider=gemini\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  kopilot                          # Start in read-only mode\n")
-		fmt.Fprintf(os.Stderr, "  kopilot --interactive            # Start in interactive mode\n")
-		fmt.Fprintf(os.Stderr, "  kopilot --agent debugger         # Start as debugging specialist\n")
-		fmt.Fprintf(os.Stderr, "  kopilot --agent security         # Start as security auditor\n")
-		fmt.Fprintf(os.Stderr, "  kopilot --agent optimizer        # Start as optimization specialist\n")
-		fmt.Fprintf(os.Stderr, "  kopilot --agent gitops           # Start as GitOps specialist\n")
-		fmt.Fprintf(os.Stderr, "  kopilot --agent sanitizer        # Start as cluster sanitizer\n")
-		fmt.Fprintf(os.Stderr, "  kopilot --mcp-config ./mcp.json  # Use custom MCP server config\n")
-		fmt.Fprintf(os.Stderr, "  kopilot -v                       # Start with verbose logging\n")
-		fmt.Fprintf(os.Stderr, "  KUBECONFIG=./custom kopilot      # Use custom kubeconfig\n")
+		fmt.Fprintf(os.Stderr, "  kopilot                                           # GitHub Copilot, read-only\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --interactive                             # interactive mode\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --agent debugger                         # debugging specialist\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --agent security                         # security auditor\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --agent optimizer                        # optimization specialist\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --agent gitops                           # GitOps specialist\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --agent sanitizer                        # cluster sanitizer\n")
+		fmt.Fprintf(os.Stderr, "  OPENAI_API_KEY=sk-... kopilot --ai-provider=openai\n")
+		fmt.Fprintf(os.Stderr, "  OPENAI_BASE_URL=http://localhost:11434/v1 kopilot --ai-provider=openai  # Ollama\n")
+		fmt.Fprintf(os.Stderr, "  GEMINI_API_KEY=AIza... kopilot --ai-provider=gemini\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --mcp-config ./mcp.json                  # custom MCP server config\n")
+		fmt.Fprintf(os.Stderr, "  kopilot -v                                        # verbose logging\n")
+		fmt.Fprintf(os.Stderr, "\nMCP Server Mode:\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --mcp-server                              # stdio MCP server\n")
+		fmt.Fprintf(os.Stderr, "  kopilot --mcp-server --context production         # specific kube context\n")
 	}
 
 	flag.Parse()
+
+	if *mcpServer {
+		if err := runMCPServer(*kubeconfig, *contextName, *verbose); err != nil {
+			log.Fatalf("MCP server error: %v", err)
+		}
+		os.Exit(0)
+	}
 
 	if *showVersion {
 		fmt.Printf("kopilot version %s\n", version)
@@ -107,17 +143,18 @@ func main() {
 		log.Fatalf("Invalid --agent value: %v", agentErr)
 	}
 
-	if err := run(mode, *kubeconfig, *contextName, format, agentType, *mcpConfig); err != nil {
+	if err := run(mode, *kubeconfig, *contextName, format, agentType, *mcpConfig, *aiProvider); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
 }
 
-func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, outputFormat agent.OutputFormat, agentType agent.AgentType, mcpConfigPath string) error {
+func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, outputFormat agent.OutputFormat, agentType agent.AgentType, mcpConfigPath string, providerName string) error {
 	// Set version in agent package for display
 	agent.AppVersion = version
 
-	// Verify kubeconfig exists
-	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
+	// Verify kubeconfig exists. The path comes from a CLI flag/env that the
+	// operator controls; os.Stat only checks existence and does not expose content.
+	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) { // #nosec G703
 		return fmt.Errorf("kubeconfig not found at %s: %w", kubeconfigPath, err)
 	}
 
@@ -138,11 +175,37 @@ func run(mode agent.ExecutionMode, kubeconfigPath string, contextName string, ou
 
 	log.Printf("Successfully loaded %d cluster(s) from kubeconfig", len(k8sProvider.GetClusters()))
 
+	// Initialize LLM provider
+	provider, err := agent.NewProviderByName(providerName)
+	if err != nil {
+		return err
+	}
+
 	// Initialize and run the agent
 	log.Println("Starting kopilot agent...")
-	if err := agent.Run(k8sProvider, mode, outputFormat, agentType, mcpConfigPath); err != nil {
+	if err := agent.Run(k8sProvider, mode, outputFormat, agentType, mcpConfigPath, provider); err != nil {
 		return fmt.Errorf("failed to run agent: %w", err)
 	}
 
 	return nil
+}
+
+func runMCPServer(kubeconfigPath, contextName string, verbose bool) error {
+	agent.AppVersion = version
+	if !verbose {
+		log.SetOutput(io.Discard)
+	}
+	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) { // #nosec G703
+		return fmt.Errorf("kubeconfig not found at %s: %w", kubeconfigPath, err)
+	}
+	k8sProvider, err := k8s.NewProvider(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize kubernetes provider: %w", err)
+	}
+	if contextName != "" {
+		if err := k8sProvider.SetCurrentContext(contextName); err != nil {
+			return fmt.Errorf("failed to set context: %w", err)
+		}
+	}
+	return agent.RunMCPServer(k8sProvider)
 }

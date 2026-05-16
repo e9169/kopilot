@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -8,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"encoding/json"
+	"fmt"
+
 	"github.com/e9169/kopilot/pkg/k8s"
-	copilot "github.com/github/copilot-sdk/go"
+	"github.com/e9169/kopilot/pkg/llm"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -75,14 +79,14 @@ func TestListClustersTool(t *testing.T) {
 
 	// Test tool invocation
 	_ = ListClustersParams{}
-	inv := copilot.ToolInvocation{}
+	inv := llm.ToolInvocation{}
 
-	result, err := tool.Handler(inv)
+	result, err := tool.Handler(nil, inv)
 	if err != nil {
 		t.Errorf("Tool handler returned error: %v", err)
 	}
 
-	if result.TextResultForLLM == "" {
+	if fmt.Sprintf("%v", result) == "" {
 		t.Error("Tool handler returned empty result")
 	}
 }
@@ -92,17 +96,18 @@ func TestListClustersToolJSONOutput(t *testing.T) {
 	state := &agentState{mode: ModeReadOnly, outputFormat: OutputJSON}
 	tool := defineListClustersTool(provider, state)
 
-	inv := copilot.ToolInvocation{}
-	result, err := tool.Handler(inv)
+	inv := llm.ToolInvocation{}
+	result, err := tool.Handler(nil, inv)
 	if err != nil {
 		t.Errorf("Tool handler returned error: %v", err)
 	}
 
-	if result.TextResultForLLM == "" {
+	if fmt.Sprintf("%v", result) == "" {
 		t.Error("Tool handler returned empty result")
 	}
 
-	if !strings.Contains(result.TextResultForLLM, "clusters") {
+	b, _ := json.Marshal(result)
+	if !strings.Contains(string(b), "clusters") {
 		t.Error("JSON output did not include expected key 'clusters'")
 	}
 }
@@ -348,8 +353,8 @@ func TestToolConcurrency(t *testing.T) {
 		go func() {
 			for _, tool := range tools {
 				if tool.Name == "list_clusters" {
-					inv := copilot.ToolInvocation{}
-					_, _ = tool.Handler(inv)
+					inv := llm.ToolInvocation{}
+					_, _ = tool.Handler(nil, inv)
 				}
 			}
 			done <- true
@@ -392,11 +397,11 @@ func BenchmarkListClustersTool(b *testing.B) {
 	provider := createMockProvider(b)
 	state := &agentState{mode: ModeReadOnly, outputFormat: OutputText}
 	tool := defineListClustersTool(provider, state)
-	inv := copilot.ToolInvocation{}
+	inv := llm.ToolInvocation{}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = tool.Handler(inv)
+		_, _ = tool.Handler(nil, inv)
 	}
 }
 
@@ -516,7 +521,7 @@ func TestDefineToolsWithState(t *testing.T) {
 	}
 
 	// Verify kubectl_exec tool exists
-	var kubectlTool *copilot.Tool
+	var kubectlTool *llm.Tool
 	for i := range tools {
 		if tools[i].Name == toolKubectlExec {
 			kubectlTool = &tools[i]
@@ -1227,5 +1232,228 @@ func TestDispatchUXCommandUnknown(t *testing.T) {
 	}
 	if handled {
 		t.Error("dispatchUXCommand should return handled=false for unknown commands")
+	}
+}
+
+func TestWarnSkip_NonJSONDoesNotPanic(t *testing.T) {
+	// Exercises the fmt.Printf branch; output goes to stdout (not captured).
+	warnSkip(OutputText, "  skipped %s\n", "file.txt")
+}
+
+func writeTestFile(t *testing.T, path string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertContains(t *testing.T, s, substr string) {
+	t.Helper()
+	if !strings.Contains(s, substr) {
+		t.Errorf("expected output to contain %q", substr)
+	}
+}
+
+func assertNotContains(t *testing.T, s, substr string) {
+	t.Helper()
+	if strings.Contains(s, substr) {
+		t.Errorf("expected output not to contain %q", substr)
+	}
+}
+
+// TestBuildAttachmentContent covers the WP-05 safety limits.
+func TestBuildAttachmentContent(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	smallFile := filepath.Join(tmpDir, "small.txt")
+	writeTestFile(t, smallFile, []byte("hello world"))
+
+	binaryFile := filepath.Join(tmpDir, "binary.bin")
+	writeTestFile(t, binaryFile, []byte{0x7f, 0x45, 0x4c, 0x46, 0x00, 0x01})
+
+	largeFile := filepath.Join(tmpDir, "large.txt")
+	writeTestFile(t, largeFile, make([]byte, maxAttachmentFileSize+1))
+
+	// Three files of 400 KB each (< 512 KB per-file limit).
+	// First two fit (800 KB < 1 MB); third pushes total to 1.2 MB and is excluded.
+	payload := bytes.Repeat([]byte{'a'}, 400*1024)
+	f1 := filepath.Join(tmpDir, "big1.txt")
+	f2 := filepath.Join(tmpDir, "big2.txt")
+	f3 := filepath.Join(tmpDir, "big3.txt")
+	for _, f := range []string{f1, f2, f3} {
+		writeTestFile(t, f, payload)
+	}
+
+	t.Run("small text file included", func(t *testing.T) {
+		got := buildAttachmentContent([]string{smallFile}, OutputJSON)
+		assertContains(t, got, "hello world")
+	})
+
+	t.Run("binary file excluded", func(t *testing.T) {
+		got := buildAttachmentContent([]string{binaryFile}, OutputJSON)
+		assertNotContains(t, got, "\x00")
+		assertNotContains(t, got, "binary.bin")
+	})
+
+	t.Run("large file excluded", func(t *testing.T) {
+		got := buildAttachmentContent([]string{largeFile}, OutputJSON)
+		assertNotContains(t, got, "large.txt")
+	})
+
+	t.Run("cumulative limit respected", func(t *testing.T) {
+		got := buildAttachmentContent([]string{f1, f2, f3}, OutputJSON)
+		assertContains(t, got, "big1.txt")
+		assertContains(t, got, "big2.txt")
+		assertNotContains(t, got, "big3.txt")
+	})
+}
+
+// TestKubectlTimeout covers the WP-06 timeout configurability.
+func TestKubectlTimeout(t *testing.T) {
+	t.Run("default when unset", func(t *testing.T) {
+		t.Setenv("KOPILOT_KUBECTL_TIMEOUT", "")
+		if got := kubectlTimeout(); got != 30*time.Second {
+			t.Errorf("default timeout = %v, want 30s", got)
+		}
+	})
+
+	t.Run("custom valid duration", func(t *testing.T) {
+		t.Setenv("KOPILOT_KUBECTL_TIMEOUT", "2m")
+		if got := kubectlTimeout(); got != 2*time.Minute {
+			t.Errorf("custom timeout = %v, want 2m", got)
+		}
+	})
+
+	t.Run("invalid value falls back to default", func(t *testing.T) {
+		t.Setenv("KOPILOT_KUBECTL_TIMEOUT", "not-a-duration")
+		if got := kubectlTimeout(); got != 30*time.Second {
+			t.Errorf("invalid timeout = %v, want 30s fallback", got)
+		}
+	})
+
+	t.Run("zero or negative falls back to default", func(t *testing.T) {
+		t.Setenv("KOPILOT_KUBECTL_TIMEOUT", "-5s")
+		if got := kubectlTimeout(); got != 30*time.Second {
+			t.Errorf("negative timeout = %v, want 30s fallback", got)
+		}
+	})
+}
+
+// ── WP-07: provider abstraction lifecycle and regression coverage ─────────────
+
+// fakeSession is a minimal llm.Session stub for WP-07 contract tests.
+type fakeSession struct {
+	disconnected bool
+	handlers     []func(llm.Event)
+}
+
+func (s *fakeSession) Disconnect() error                            { s.disconnected = true; return nil }
+func (s *fakeSession) SendPrompt(_ context.Context, _ string) error { return nil }
+func (s *fakeSession) On(h func(llm.Event))                         { s.handlers = append(s.handlers, h) }
+func (s *fakeSession) emit(e llm.Event) {
+	for _, h := range s.handlers {
+		h(e)
+	}
+}
+
+// fakeProvider is a minimal llm.Provider that returns a pre-built fakeSession.
+type fakeProvider struct {
+	session    *fakeSession
+	lastConfig *llm.SessionConfig
+}
+
+func (p *fakeProvider) Name() string                  { return "fake" }
+func (p *fakeProvider) Start(_ context.Context) error { return nil }
+func (p *fakeProvider) Stop() error                   { return nil }
+func (p *fakeProvider) CreateSession(_ context.Context, cfg *llm.SessionConfig) (llm.Session, error) {
+	p.lastConfig = cfg
+	return p.session, nil
+}
+
+// TestSetupSessionEventHandlerRouting verifies that each normalized EventType
+// is dispatched by setupSessionEventHandler without panicking.
+func TestSetupSessionEventHandlerRouting(t *testing.T) {
+	sess := &fakeSession{}
+	isIdle := false
+	state := &agentState{outputFormat: OutputJSON}
+
+	setupSessionEventHandler(sess, &isIdle, state)
+
+	// EventIdle must flip the idle flag.
+	sess.emit(llm.Event{Type: llm.EventIdle})
+	if !isIdle {
+		t.Error("EventIdle should set isIdle=true")
+	}
+
+	// All other events must not panic regardless of Data contents.
+	sess.emit(llm.Event{Type: llm.EventMessage, Data: &llm.MessageData{Content: "hello"}})
+	sess.emit(llm.Event{Type: llm.EventDelta, Data: &llm.DeltaData{Content: "chunk"}})
+	sess.emit(llm.Event{Type: llm.EventError, Data: &llm.ErrorData{Message: "boom"}})
+	sess.emit(llm.Event{Type: llm.EventUsage, Data: &llm.UsageData{QuotaPercentage: 42}})
+}
+
+// TestSwitchToModelDisconnectsOldSession verifies that switchToModel calls
+// Disconnect on the previous session and returns the provider's new session.
+func TestSwitchToModelDisconnectsOldSession(t *testing.T) {
+	k8sProvider := newTestK8sProvider(t)
+
+	oldSess := &fakeSession{}
+	newSess := &fakeSession{}
+	provider := &fakeProvider{session: newSess}
+
+	isIdle := true // pre-set so waitForIdle returns immediately
+	state := &agentState{
+		mode:          ModeReadOnly,
+		outputFormat:  OutputJSON,
+		selectedAgent: AgentDefault,
+		mcpConfigPath: filepath.Join(t.TempDir(), "mcp.json"),
+	}
+	deps := &loopDeps{
+		ctx:         context.Background(),
+		provider:    provider,
+		k8sProvider: k8sProvider,
+		state:       state,
+		isIdle:      &isIdle,
+	}
+
+	got, err := switchToModel(deps, oldSess, "test-model")
+	if err != nil {
+		t.Fatalf("switchToModel returned error: %v", err)
+	}
+	if !oldSess.disconnected {
+		t.Error("switchToModel should call Disconnect on the old session")
+	}
+	if got != newSess {
+		t.Error("switchToModel should return the session from provider.CreateSession")
+	}
+}
+
+// TestCreateSessionWithModelIncludesMCPServers verifies that createSessionWithModel
+// always includes the MCPServers key in ExtraConfig, even when the config file is absent.
+func TestCreateSessionWithModelIncludesMCPServers(t *testing.T) {
+	k8sProvider := newTestK8sProvider(t)
+
+	sess := &fakeSession{}
+	provider := &fakeProvider{session: sess}
+
+	state := &agentState{
+		mode:          ModeReadOnly,
+		outputFormat:  OutputJSON,
+		selectedAgent: AgentDefault,
+		mcpConfigPath: filepath.Join(t.TempDir(), "mcp.json"), // absent → empty list
+	}
+
+	_, err := createSessionWithModel(context.Background(), provider, k8sProvider, state, "some-model")
+	if err != nil {
+		t.Fatalf("createSessionWithModel returned error: %v", err)
+	}
+	if provider.lastConfig == nil {
+		t.Fatal("provider.CreateSession was never called")
+	}
+	if _, ok := provider.lastConfig.ExtraConfig["MCPServers"]; !ok {
+		t.Error("SessionConfig.ExtraConfig must contain MCPServers key")
+	}
+	if provider.lastConfig.Model != "some-model" {
+		t.Errorf("Model = %q, want some-model", provider.lastConfig.Model)
 	}
 }
