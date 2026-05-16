@@ -40,7 +40,7 @@ jobs:
           cache: true
 
       - name: Run gosec
-        uses: securego/gosec@6decf96c3d272d5a8bbdcf9fddb5789d0be16a8d # v2.22.4
-        with:
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec
           # Fail on high and critical severity findings; medium and below are reported but non-blocking.
-          args: '-severity high -confidence medium ./...'
+          gosec -severity high -confidence medium ./...
