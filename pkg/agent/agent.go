@@ -681,25 +681,25 @@ func onUsageEvent(event copilot.SessionEvent, state *agentState) {
 	if exists && snapshot.RemainingPercentage >= 0 {
 		state.quotaPercentage = snapshot.RemainingPercentage
 		state.quotaUnlimited = snapshot.IsUnlimitedEntitlement
-		state.quotaUsed = snapshot.UsedRequests
-		state.quotaTotal = snapshot.EntitlementRequests
+		state.quotaUsed = float64(snapshot.UsedRequests)
+		state.quotaTotal = float64(snapshot.EntitlementRequests)
 	}
 }
 
 // setupSessionEventHandler creates and returns an event handler for the session.
 func setupSessionEventHandler(session *copilot.Session, isIdlePtr *bool, state *agentState) {
 	session.On(func(event copilot.SessionEvent) {
-		switch event.Type {
-		case "assistant.message":
+		switch event.Type() {
+		case copilot.SessionEventTypeAssistantMessage:
 			onMessageEvent(event, state)
-		case "assistant.message_delta":
+		case copilot.SessionEventTypeAssistantMessageDelta:
 			onDeltaEvent(event)
-		case "session.error":
+		case copilot.SessionEventTypeSessionError:
 			onSessionErrorEvent(event)
-		case "session.idle":
+		case copilot.SessionEventTypeSessionIdle:
 			*isIdlePtr = true
 			state.setAbortCurrentTurn(nil)
-		case "assistant.usage":
+		case copilot.SessionEventTypeAssistantUsage:
 			onUsageEvent(event, state)
 		}
 	})
@@ -900,8 +900,8 @@ func createAndStartClient(ctx context.Context) (*copilot.Client, error) {
 	// The embedded CLI (from `go tool bundler`) takes priority,
 	// then COPILOT_CLI_PATH env var, then `copilot` in PATH.
 	client := copilot.NewClient(&copilot.ClientOptions{
-		Cwd:      cwd,
-		LogLevel: "error", // Reduce noise in logs
+		WorkingDirectory: cwd,
+		LogLevel:         "error", // Reduce noise in logs
 	})
 
 	log.Println("Starting Copilot client...")
@@ -974,10 +974,7 @@ func loadMCPServersForSession(cfgPath string) map[string]copilot.MCPServerConfig
 	}
 	m := make(map[string]copilot.MCPServerConfig, len(servers))
 	for _, s := range servers {
-		m[s.Name] = copilot.MCPServerConfig{
-			"type": s.Type,
-			"url":  s.URL,
-		}
+		m[s.Name] = copilot.MCPHTTPServerConfig{URL: s.URL}
 	}
 	return m
 }
@@ -990,7 +987,7 @@ func createSessionWithModel(ctx context.Context, client *copilot.Client, k8sProv
 
 	session, err := client.CreateSession(ctx, &copilot.SessionConfig{
 		Model:               model,
-		Streaming:           true,
+		Streaming:           copilot.Bool(true),
 		Tools:               tools,
 		CustomAgents:        buildCustomAgents(),
 		OnPermissionRequest: copilot.PermissionHandler.ApproveAll,
@@ -1667,16 +1664,26 @@ func printAttachments(attachments []copilot.Attachment, outputFormat OutputForma
 		return
 	}
 	for _, a := range attachments {
-		if a.Path == nil {
+		var (
+			path  string
+			dname string
+		)
+		switch v := a.(type) {
+		case copilot.AttachmentFile:
+			path = v.Path
+			dname = v.DisplayName
+		case *copilot.AttachmentFile:
+			if v == nil {
+				continue
+			}
+			path = v.Path
+			dname = v.DisplayName
+		default:
 			continue
 		}
-		fi, err := os.Stat(*a.Path)
+		fi, err := os.Stat(path)
 		if err != nil {
 			continue
-		}
-		dname := ""
-		if a.DisplayName != nil {
-			dname = *a.DisplayName
 		}
 		fmt.Printf("  %s📎 Attached: %s (%s)%s\n", colorCyan, dname, formatBytes(fi.Size()), colorReset)
 	}
@@ -1812,12 +1819,9 @@ func extractAttachments(input string) (string, []copilot.Attachment) {
 		if closeErr := f.Close(); closeErr != nil {
 			log.Printf("Warning: failed to close attachment file %s: %v", abs, closeErr)
 		}
-		pathCopy := abs
-		nameCopy := filepath.Base(abs)
-		attachments = append(attachments, copilot.Attachment{
-			Type:        copilot.AttachmentTypeFile,
-			Path:        &pathCopy,
-			DisplayName: &nameCopy,
+		attachments = append(attachments, copilot.AttachmentFile{
+			Path:        abs,
+			DisplayName: filepath.Base(abs),
 		})
 	}
 	return strings.Join(kept, " "), attachments
