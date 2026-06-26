@@ -407,7 +407,7 @@ func ParseAgentType(s string) (AgentType, error) {
 
 const (
 	// Default model selection constants
-	defaultModelCostEffective = "gpt-4.1"           // Cost-effective model for simple queries
+	defaultModelCostEffective = "gpt-5.4-mini"      // Cost-effective model for simple queries
 	defaultModelPremium       = "claude-sonnet-4.6" // Premium model for complex tasks
 
 	// ANSI color codes

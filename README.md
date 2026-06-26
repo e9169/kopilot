@@ -48,7 +48,7 @@ An interactive agent built with the **official GitHub Copilot SDK** in Go that p
 - 📄 **Plain-Text Output**: Responses use emoji + uppercase headers (e.g. `🔵 STATUS:`, `⚠️ ISSUES:`) for clean, readable output without markdown tables or bold formatting
 - 🎯 **Type-Safe Tools**: Uses Copilot SDK's DefineTool for automatic schema generation
 - 💰 **Smart Cost Optimization**: Intelligent model selection based on task complexity (see [docs/MODEL_SELECTION.md](docs/MODEL_SELECTION.md))
-  - Uses `gpt-4.1` for simple queries (list, status, health checks)
+  - Uses `gpt-5.4-mini` for simple queries (list, status, health checks)
   - Automatically upgrades to `claude-sonnet-4.6` for troubleshooting and complex operations
   - 50-70% cost reduction while maintaining quality for critical tasks
 - 🎭 **Specialist Agent Personas**: Five focused AI personas for advanced operations (see [docs/AGENTS.md](docs/AGENTS.md))
@@ -345,7 +345,7 @@ KUBECONFIG=/path/to/kubeconfig ./bin/kopilot
 
 **Optional - Model Configuration:**
 
-- `KOPILOT_MODEL_COST_EFFECTIVE` - Override AI model for simple queries (default: `gpt-4.1`)
+- `KOPILOT_MODEL_COST_EFFECTIVE` - Override AI model for simple queries (default: `gpt-5.4-mini`)
 - `KOPILOT_MODEL_PREMIUM` - Override AI model for complex operations (default: `claude-sonnet-4.6`)
 
 **Optional - Execution:**

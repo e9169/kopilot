@@ -89,8 +89,8 @@ func TestSpecialistAgentsAlwaysUsePremiumModel(t *testing.T) {
 
 func TestModelConstants(t *testing.T) {
 	// Verify the constants have expected values
-	if modelCostEffective != "gpt-4.1" {
-		t.Errorf("modelCostEffective = %q, want %q", modelCostEffective, "gpt-4.1")
+	if modelCostEffective != "gpt-5.4-mini" {
+		t.Errorf("modelCostEffective = %q, want %q", modelCostEffective, "gpt-5.4-mini")
 	}
 
 	if modelPremium != "claude-sonnet-4.6" {
