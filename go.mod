@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/chzyer/readline v1.5.1
-	github.com/github/copilot-sdk/go v0.2.2
+	github.com/github/copilot-sdk/go v1.0.4
 	github.com/klauspost/compress v1.18.6
 	k8s.io/api v0.36.2
 	k8s.io/apimachinery v0.36.2
@@ -12,6 +12,7 @@ require (
 )
 
 require (
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
