@@ -12,6 +12,9 @@ on:
 
 jobs:
   claude-review:
+    # Skip for dependabot PRs: secrets are unavailable and the Anthropic GitHub App
+    # OIDC exchange fails with "User does not have write access on this repository".
+    # Use pull_request.user.login (PR author) rather than github.actor (last pusher).
     if: github.event.pull_request.user.login != 'dependabot[bot]'
 
     runs-on: ubuntu-latest
@@ -23,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -37,4 +40,3 @@ jobs:
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
-
