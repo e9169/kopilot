@@ -10,8 +10,8 @@ coverage:
         base: auto
     patch:
       default:
-        target: 40%
-        threshold: 5%
+        target: auto
+        threshold: 1%
         base: auto
 
   precision: 2
@@ -32,8 +32,6 @@ ignore:
   - "**/*_test.go"
   - "test_*.go"
   - "main.go"
-  - "pkg/llm/gemini/provider.go"
-  - "pkg/llm/copilot/provider.go"
 
 # Component-based coverage
 component_management:

@@ -2,7 +2,6 @@ package copilot
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/e9169/kopilot/pkg/llm"
@@ -102,27 +101,15 @@ func (p *Provider) CreateSession(ctx context.Context, config *llm.SessionConfig)
 			Description: t.Description,
 			Parameters:  t.Parameters,
 			Handler: func(inv sdk.ToolInvocation) (sdk.ToolResult, error) {
-				argsStr := "{}"
-				if b, err := json.Marshal(inv.Arguments); err == nil {
-					argsStr = string(b)
-				}
-
-				var params map[string]any
-				if argsStr != "{}" {
-					_ = json.Unmarshal([]byte(argsStr), &params)
-				}
-
+				params, argsStr := llm.NormalizeToolArguments(inv.Arguments)
 				resAny, err := handler(params, llm.ToolInvocation{
 					ID:        inv.ToolCallID,
 					Name:      inv.ToolName,
 					Arguments: argsStr,
 				})
-
-				var textResult string
-				if resBytes, err := json.Marshal(resAny); err == nil {
-					textResult = string(resBytes)
-				} else {
-					textResult = fmt.Sprintf("%v", resAny)
+				textResult := llm.ResultString(resAny)
+				if err != nil {
+					textResult = fmt.Sprintf("Error executing tool: %v", err)
 				}
 
 				return sdk.ToolResult{

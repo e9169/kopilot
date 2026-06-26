@@ -86,7 +86,6 @@ func (p *Provider) CreateSession(ctx context.Context, config *llm.SessionConfig)
 		tools:         tools,
 		toolMap:       toolMap,
 		messages:      []goopenai.ChatCompletionMessage{},
-		handlers:      []func(llm.Event){},
 	}
 
 	if s.systemMessage != "" {
@@ -108,7 +107,7 @@ type Session struct {
 	tools         []goopenai.Tool
 	toolMap       map[string]llm.Tool
 	messages      []goopenai.ChatCompletionMessage
-	handlers      []func(llm.Event)
+	emitter       llm.EventEmitter
 	cancel        context.CancelFunc
 }
 
@@ -120,13 +119,11 @@ func (s *Session) Disconnect() error {
 }
 
 func (s *Session) emit(event llm.Event) {
-	for _, h := range s.handlers {
-		h(event)
-	}
+	s.emitter.Emit(event)
 }
 
 func (s *Session) On(handler func(llm.Event)) {
-	s.handlers = append(s.handlers, handler)
+	s.emitter.On(handler)
 }
 
 func (s *Session) SendPrompt(ctx context.Context, prompt string) error {
@@ -272,34 +269,27 @@ func mergeToolCallChunk(toolCalls []goopenai.ToolCall, tc goopenai.ToolCall) []g
 }
 
 func (s *Session) handleToolCall(tc goopenai.ToolCall) {
-	toolDef, ok := s.toolMap[tc.Function.Name]
 	var result string
 
-	if !ok {
-		result = fmt.Sprintf("Error: Unknown tool %s", tc.Function.Name)
-	} else {
-		// Parse arguments into a map
-		var args map[string]any
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-			// Some LLMs might pass broken JSON, try to handle as string
-			args = map[string]any{"raw": tc.Function.Arguments}
-		}
+	args := llm.ParseToolArgumentsString(tc.Function.Arguments)
+	resAny, err := llm.InvokeTool(s.toolMap, args, llm.ToolInvocation{
+		ID:        tc.ID,
+		Name:      tc.Function.Name,
+		Arguments: tc.Function.Arguments,
+	})
 
-		resAny, err := toolDef.Handler(args, llm.ToolInvocation{
-			ID:        tc.ID,
-			Name:      tc.Function.Name,
-			Arguments: tc.Function.Arguments,
-		})
-
-		if err != nil {
-			result = fmt.Sprintf("Error executing tool: %v", err)
+	if err != nil {
+		if _, ok := s.toolMap[tc.Function.Name]; !ok {
+			result = fmt.Sprintf("Error: Unknown tool %s", tc.Function.Name)
 		} else {
-			if resBytes, err := json.Marshal(resAny); err == nil {
-				result = string(resBytes)
-			} else {
-				result = fmt.Sprintf("%v", resAny)
-			}
+			result = fmt.Sprintf("Error executing tool: %v", err)
 		}
+	} else {
+		result = llm.ResultString(resAny)
+	}
+
+	if result == "" {
+		result = fmt.Sprintf("Error: Unknown tool %s", tc.Function.Name)
 	}
 
 	s.messages = append(s.messages, goopenai.ChatCompletionMessage{

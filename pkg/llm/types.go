@@ -92,3 +92,20 @@ type UsageData struct {
 	QuotaUsed       float64
 	QuotaTotal      float64
 }
+
+// EventEmitter stores and dispatches session event handlers.
+type EventEmitter struct {
+	handlers []func(Event)
+}
+
+// On registers an event handler.
+func (e *EventEmitter) On(handler func(Event)) {
+	e.handlers = append(e.handlers, handler)
+}
+
+// Emit dispatches an event to all registered handlers.
+func (e *EventEmitter) Emit(event Event) {
+	for _, handler := range e.handlers {
+		handler(event)
+	}
+}

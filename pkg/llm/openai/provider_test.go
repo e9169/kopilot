@@ -25,7 +25,6 @@ func newTestSession(t *testing.T, handler http.HandlerFunc, streaming bool) (*Se
 		streaming: streaming,
 		toolMap:   map[string]llm.Tool{},
 		messages:  []goopenai.ChatCompletionMessage{},
-		handlers:  []func(llm.Event){},
 	}
 	return s, ts
 }
@@ -214,7 +213,6 @@ func TestHandleToolCall_KnownTool(t *testing.T) {
 			},
 		},
 		messages: []goopenai.ChatCompletionMessage{},
-		handlers: []func(llm.Event){},
 	}
 	tc := goopenai.ToolCall{
 		ID:       "call-1",
@@ -237,7 +235,6 @@ func TestHandleToolCall_UnknownTool(t *testing.T) {
 	s := &Session{
 		toolMap:  map[string]llm.Tool{},
 		messages: []goopenai.ChatCompletionMessage{},
-		handlers: []func(llm.Event){},
 	}
 	tc := goopenai.ToolCall{
 		ID:       "call-2",
@@ -266,7 +263,6 @@ func TestHandleToolCall_BrokenJSON(t *testing.T) {
 			},
 		},
 		messages: []goopenai.ChatCompletionMessage{},
-		handlers: []func(llm.Event){},
 	}
 	tc := goopenai.ToolCall{
 		ID:       "call-3",
@@ -278,5 +274,44 @@ func TestHandleToolCall_BrokenJSON(t *testing.T) {
 	}
 	if len(s.messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(s.messages))
+	}
+}
+
+func TestProviderNameAndStart(t *testing.T) {
+	t.Setenv("OPENAI_BASE_URL", "http://localhost:11434/v1")
+	p := NewProvider()
+	if got := p.Name(); !strings.Contains(got, "OpenAI-compatible") {
+		t.Fatalf("Name() = %q, want OpenAI-compatible", got)
+	}
+	if err := p.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if p.client == nil {
+		t.Fatal("client should be initialized after Start")
+	}
+}
+
+func TestProviderCreateSessionWithSystemMessage(t *testing.T) {
+	p := NewProvider()
+	if err := p.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	session, err := p.CreateSession(context.Background(), &llm.SessionConfig{
+		Model:         "gpt-4o-mini",
+		SystemMessage: "sys",
+		Tools: []llm.Tool{
+			{Name: "echo", Description: "echo", Parameters: map[string]any{"type": "object"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	s, ok := session.(*Session)
+	if !ok {
+		t.Fatalf("session type = %T, want *Session", session)
+	}
+	if len(s.messages) == 0 || s.messages[0].Role != goopenai.ChatMessageRoleSystem {
+		t.Fatalf("system message not initialized: %+v", s.messages)
 	}
 }

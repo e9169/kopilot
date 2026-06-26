@@ -1,8 +1,11 @@
 package gemini
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
+	"github.com/e9169/kopilot/pkg/llm"
 	"google.golang.org/genai"
 )
 
@@ -109,5 +112,86 @@ func TestConvertJSONSchemaToType_DefaultsToObject(t *testing.T) {
 	}
 	if got.Type != genai.TypeObject {
 		t.Errorf("Type = %v, want TypeObject (default)", got.Type)
+	}
+}
+
+func TestProviderNameAndStop(t *testing.T) {
+	p := NewProvider()
+	if got := p.Name(); got != "Google Gemini" {
+		t.Fatalf("Name() = %q, want %q", got, "Google Gemini")
+	}
+	if err := p.Stop(); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestProcessCandidateParts(t *testing.T) {
+	var deltas []string
+	emit := func(e llm.Event) {
+		if d, ok := e.Data.(*llm.DeltaData); ok {
+			deltas = append(deltas, d.Content)
+		}
+	}
+	var fullText strings.Builder
+	var calls []*genai.FunctionCall
+	parts := []*genai.Part{
+		{Text: "hello"},
+		{FunctionCall: &genai.FunctionCall{Name: "echo", Args: map[string]any{"x": 1}}},
+	}
+
+	processCandidateParts(parts, &fullText, &calls, emit)
+
+	if fullText.String() != "hello" {
+		t.Fatalf("fullText = %q, want hello", fullText.String())
+	}
+	if len(calls) != 1 || calls[0].Name != "echo" {
+		t.Fatalf("function calls = %#v, want one echo call", calls)
+	}
+	if len(deltas) != 1 || deltas[0] != "hello" {
+		t.Fatalf("delta events = %#v, want [hello]", deltas)
+	}
+}
+
+func TestDispatchToolCalls(t *testing.T) {
+	s := &Session{
+		toolMap: map[string]llm.Tool{
+			"echo": {
+				Name: "echo",
+				Handler: func(params any, inv llm.ToolInvocation) (any, error) {
+					return map[string]any{"ok": true}, nil
+				},
+			},
+		},
+	}
+
+	parts := s.dispatchToolCalls([]*genai.FunctionCall{{Name: "echo", Args: map[string]any{"a": 1}}})
+	if len(parts) != 1 {
+		t.Fatalf("dispatchToolCalls returned %d parts, want 1", len(parts))
+	}
+	if parts[0].FunctionResponse == nil || parts[0].FunctionResponse.Name != "echo" {
+		t.Fatalf("unexpected function response: %#v", parts[0].FunctionResponse)
+	}
+}
+
+func TestHandleToolCall_ErrorAndUnknown(t *testing.T) {
+	s := &Session{
+		toolMap: map[string]llm.Tool{
+			"fail": {
+				Name: "fail",
+				Handler: func(params any, inv llm.ToolInvocation) (any, error) {
+					return nil, errors.New("boom")
+				},
+			},
+		},
+	}
+
+	part := s.handleToolCall(&genai.FunctionCall{Name: "missing", Args: map[string]any{}})
+	if part.FunctionResponse == nil {
+		t.Fatal("missing tool call should return a function response")
+	}
+
+	part = s.handleToolCall(&genai.FunctionCall{Name: "fail", Args: map[string]any{}})
+	if part.FunctionResponse == nil {
+		t.Fatal("failing tool call should return a function response")
 	}
 }

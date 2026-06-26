@@ -5,8 +5,8 @@ go 1.26.0
 require (
 	github.com/chzyer/readline v1.5.1
 	github.com/github/copilot-sdk/go v0.2.2
-	github.com/klauspost/compress v1.18.6
 	github.com/invopop/jsonschema v0.14.0
+	github.com/klauspost/compress v1.18.6
 	github.com/mark3labs/mcp-go v0.52.0
 	github.com/sashabaranov/go-openai v1.41.2
 	github.com/securego/gosec/v2 v2.22.4
@@ -72,8 +72,8 @@ require (
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/mod v0.35.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect

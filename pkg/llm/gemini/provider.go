@@ -2,7 +2,6 @@ package gemini
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -152,7 +151,6 @@ func (p *Provider) CreateSession(ctx context.Context, config *llm.SessionConfig)
 		model:     config.Model,
 		streaming: config.Streaming,
 		toolMap:   toolMap,
-		handlers:  []func(llm.Event){},
 	}
 
 	return s, nil
@@ -164,7 +162,7 @@ type Session struct {
 	model     string
 	streaming bool
 	toolMap   map[string]llm.Tool
-	handlers  []func(llm.Event)
+	emitter   llm.EventEmitter
 	cancel    context.CancelFunc
 }
 
@@ -176,13 +174,11 @@ func (s *Session) Disconnect() error {
 }
 
 func (s *Session) emit(event llm.Event) {
-	for _, h := range s.handlers {
-		h(event)
-	}
+	s.emitter.Emit(event)
 }
 
 func (s *Session) On(handler func(llm.Event)) {
-	s.handlers = append(s.handlers, handler)
+	s.emitter.On(handler)
 }
 
 func (s *Session) SendPrompt(ctx context.Context, prompt string) error {
@@ -291,33 +287,27 @@ func (s *Session) dispatchToolCalls(functionCalls []*genai.FunctionCall) []genai
 }
 
 func (s *Session) handleToolCall(tc *genai.FunctionCall) genai.Part {
-	toolDef, ok := s.toolMap[tc.Name]
 	var result map[string]any
 
-	if !ok {
-		result = map[string]any{"error": fmt.Sprintf("Unknown tool %s", tc.Name)}
-	} else {
-		// Convert tc.Args (map[string]any) to JSON string for Arguments
-		argsBytes, _ := json.Marshal(tc.Args)
+	params, argsStr := llm.NormalizeToolArguments(tc.Args)
+	resAny, err := llm.InvokeTool(s.toolMap, params, llm.ToolInvocation{
+		ID:        tc.Name, // Gemini doesn't use unique call IDs natively in the same way.
+		Name:      tc.Name,
+		Arguments: argsStr,
+	})
 
-		resAny, err := toolDef.Handler(tc.Args, llm.ToolInvocation{
-			ID:        tc.Name, // Gemini doesn't use unique call IDs natively in the same way
-			Name:      tc.Name,
-			Arguments: string(argsBytes),
-		})
-
-		if err != nil {
-			result = map[string]any{"error": fmt.Sprintf("Error executing tool: %v", err)}
+	if err != nil {
+		if _, ok := s.toolMap[tc.Name]; !ok {
+			result = map[string]any{"error": fmt.Sprintf("Unknown tool %s", tc.Name)}
 		} else {
-			// Convert to map[string]any for Gemini FunctionResponse
-			resultBytes, _ := json.Marshal(resAny)
-			var resMap map[string]any
-			if err := json.Unmarshal(resultBytes, &resMap); err == nil {
-				result = resMap
-			} else {
-				result = map[string]any{"result": string(resultBytes)}
-			}
+			result = map[string]any{"error": fmt.Sprintf("Error executing tool: %v", err)}
 		}
+	} else {
+		result = llm.ResultMap(resAny)
+	}
+
+	if result == nil {
+		result = map[string]any{"error": fmt.Sprintf("Unknown tool %s", tc.Name)}
 	}
 
 	return *genai.NewPartFromFunctionResponse(tc.Name, result)
