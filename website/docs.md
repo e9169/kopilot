@@ -70,7 +70,7 @@ Kopilot works with **any model available through your GitHub Copilot subscriptio
 
 **Default configuration:**
 
-- **Cost-effective model** (default: gpt-4.1) - Used for simple queries and status checks
+- **Cost-effective model** (default: gpt-5.4-mini) - Used for simple queries and status checks
 - **Premium model** (default: claude-sonnet-4.6) - Automatically selected for troubleshooting and complex operations
 
 **Customization:**
@@ -86,7 +86,7 @@ export KOPILOT_MODEL_PREMIUM="o1-preview"
 ./bin/kopilot
 ```
 
-Kopilot supports any model available in your GitHub Copilot plan, including: `gpt-4.1`, `claude-sonnet-4.6`, `claude-haiku-4.5`, `gpt-5-mini`, and others.
+Kopilot supports any model available in your GitHub Copilot plan, including: `gpt-5.4-mini`, `claude-sonnet-4.6`, `claude-haiku-4.5`, `gpt-5-mini`, and others.
 
 No API key configuration needed - authentication is handled through GitHub Copilot CLI.
 
@@ -347,7 +347,7 @@ Run shell commands without involving AI using `!`:
 
 Kopilot automatically selects the optimal model based on your query:
 
-- **Simple queries** (list, status, health) → Cost-effective model (default: gpt-4.1)
+- **Simple queries** (list, status, health) → Cost-effective model (default: gpt-5.4-mini)
 - **Complex operations** (troubleshooting, scaling, debugging) → Premium model (default: claude-sonnet-4.6)
 
 This provides 50-70% cost reduction while maintaining quality for critical tasks. You can customize which models are used via environment variables.
