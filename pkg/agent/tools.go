@@ -13,36 +13,46 @@ import (
 	"time"
 
 	"github.com/e9169/kopilot/pkg/k8s"
-	copilot "github.com/github/copilot-sdk/go"
+	"github.com/e9169/kopilot/pkg/llm"
 )
 
-// defineTools creates all the Kubernetes-related tools for the agent
-func defineTools(k8sProvider *k8s.Provider, state *agentState) []copilot.Tool {
-	tools := []copilot.Tool{
+// defineK8sTools returns the 6 Kubernetes operational tools.
+// Used by both the interactive REPL mode and --mcp-server mode.
+func defineK8sTools(k8sProvider *k8s.Provider, state *agentState) []llm.Tool {
+	tools := []llm.Tool{
 		defineListClustersTool(k8sProvider, state),
 		defineGetClusterStatusTool(k8sProvider, state),
 		defineCompareClustersTool(k8sProvider, state),
 		defineCheckAllClustersTool(k8sProvider, state),
 		defineKubectlExecTool(k8sProvider, state),
 		defineSanitizeClusterTool(k8sProvider, state),
-		defineMCPListServersTool(state),
-		defineMCPAddServerTool(state),
-		defineMCPDeleteServerTool(state),
 	}
-	// Ensure all tool schemas are valid for all models/APIs.
-	// Most LLM APIs (OpenAI, Anthropic, Google, etc.) require object schemas
-	// to include a "properties" field even when there are no parameters.
 	for i := range tools {
 		tools[i] = fixEmptySchema(tools[i])
 	}
 	return tools
 }
 
+// defineTools returns all 9 tools: the 6 K8s tools plus the 3 MCP management tools.
+// Used by the interactive REPL mode only.
+func defineTools(k8sProvider *k8s.Provider, state *agentState) []llm.Tool {
+	tools := defineK8sTools(k8sProvider, state)
+	mcpTools := []llm.Tool{
+		defineMCPListServersTool(state),
+		defineMCPAddServerTool(state),
+		defineMCPDeleteServerTool(state),
+	}
+	for i := range mcpTools {
+		mcpTools[i] = fixEmptySchema(mcpTools[i])
+	}
+	return append(tools, mcpTools...)
+}
+
 // fixEmptySchema ensures tools with no parameters have a valid JSON schema.
 // The OpenAI API requires {"type":"object","properties":{}} for parameter-less tools.
 // Without this, the SDK-generated schema for empty structs omits "properties",
 // causing a 400 "object schema missing properties" error.
-func fixEmptySchema(t copilot.Tool) copilot.Tool {
+func fixEmptySchema(t llm.Tool) llm.Tool {
 	if t.Parameters == nil {
 		t.Parameters = map[string]any{}
 	}
@@ -61,11 +71,11 @@ type ListClustersResult struct {
 	Clusters       []*k8s.ClusterInfo `json:"clusters"`
 }
 
-func defineListClustersTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
-	return copilot.DefineTool(
+func defineListClustersTool(k8sProvider *k8s.Provider, state *agentState) llm.Tool {
+	return llm.DefineTool(
 		toolListClusters,
 		"List all Kubernetes clusters available in the kubeconfig file with basic information including context names, server URLs, and current context",
-		func(params ListClustersParams, inv copilot.ToolInvocation) (any, error) {
+		func(params ListClustersParams, inv llm.ToolInvocation) (any, error) {
 			clusters := k8sProvider.GetClusters()
 			currentContext := k8sProvider.GetCurrentContext()
 
@@ -158,11 +168,11 @@ func writeNamespaceInfo(result *strings.Builder, status *k8s.ClusterStatus) {
 	}
 }
 
-func defineGetClusterStatusTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
-	return copilot.DefineTool(
+func defineGetClusterStatusTool(k8sProvider *k8s.Provider, state *agentState) llm.Tool {
+	return llm.DefineTool(
 		toolGetClusterStatus,
 		"Get detailed status information for a specific Kubernetes cluster including reachability, nodes, version, and health metrics. IMPORTANT: Present the tool output exactly as received - it contains visual card/box formatting. Do NOT convert it to a table.",
-		func(params GetClusterStatusParams, inv copilot.ToolInvocation) (any, error) {
+		func(params GetClusterStatusParams, inv llm.ToolInvocation) (any, error) {
 			ctx := context.Background()
 			status, err := k8sProvider.GetClusterStatus(ctx, params.Context)
 			if err != nil {
@@ -299,11 +309,11 @@ func countReachableClusters(comparisons []ComparisonData) int {
 	return count
 }
 
-func defineCompareClustersTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
-	return copilot.DefineTool(
+func defineCompareClustersTool(k8sProvider *k8s.Provider, state *agentState) llm.Tool {
+	return llm.DefineTool(
 		toolCompareClusters,
 		"Compare multiple Kubernetes clusters side by side, showing their versions, node counts, health status, and availability",
-		func(params CompareClusterParams, inv copilot.ToolInvocation) (any, error) {
+		func(params CompareClusterParams, inv llm.ToolInvocation) (any, error) {
 			if len(params.Contexts) == 0 {
 				return nil, fmt.Errorf("at least one context must be provided")
 			}
@@ -426,11 +436,11 @@ func writeCompactClusterStatus(result *strings.Builder, status *k8s.ClusterStatu
 	}
 }
 
-func defineCheckAllClustersTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
-	return copilot.DefineTool(
+func defineCheckAllClustersTool(k8sProvider *k8s.Provider, state *agentState) llm.Tool {
+	return llm.DefineTool(
 		toolCheckAllClusters,
 		"Check the status of ALL clusters in parallel for fast health monitoring. This is the most efficient way to get a complete overview of all clusters including their health status, node counts, version information, and any issues. Use this for initial health checks or when you need a full cluster overview. IMPORTANT: Present the tool output exactly as received - it already contains visual card formatting. Do NOT convert it to a table.",
-		func(params CheckAllClustersParams, inv copilot.ToolInvocation) (any, error) {
+		func(params CheckAllClustersParams, inv llm.ToolInvocation) (any, error) {
 			ctx := context.Background()
 			statuses := k8sProvider.GetAllClusterStatuses(ctx)
 
@@ -499,11 +509,11 @@ func handleWriteDenied(state *agentState) {
 	state.abortTurnIfActive()
 }
 
-func defineKubectlExecTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
-	return copilot.DefineTool(
+func defineKubectlExecTool(k8sProvider *k8s.Provider, state *agentState) llm.Tool {
+	return llm.DefineTool(
 		toolKubectlExec,
 		"Execute kubectl commands against a specific Kubernetes cluster. Use this to perform operations like getting resources, scaling deployments, checking logs, describing resources, etc. Always specify the context and provide the kubectl arguments as an array.",
-		func(params KubectlExecParams, inv copilot.ToolInvocation) (any, error) {
+		func(params KubectlExecParams, inv llm.ToolInvocation) (any, error) {
 			return handleKubectlExec(k8sProvider, state, params)
 		},
 	)
@@ -514,14 +524,25 @@ func handleKubectlExec(k8sProvider *k8s.Provider, state *agentState, params Kube
 		return nil, err
 	}
 
+	if err := validateKubectlCommand(params.Args); err != nil {
+		fullCmd := fmt.Sprintf("kubectl %s", strings.Join(params.Args, " "))
+		validationErr := fmt.Errorf("validation failed: %w", err)
+		if isJSONOutput(state.outputFormat) {
+			return buildKubectlJSONResult("unknown", params.Context, fullCmd, nil, validationErr)
+		}
+		return buildKubectlTextResult("unknown", params.Context, fullCmd, nil, validationErr)
+	}
+
+	sanitizedArgs := sanitizeKubectlArgs(params.Args)
+
 	cluster, err := getClusterForContext(k8sProvider, params.Context)
 	if err != nil {
 		return nil, err
 	}
 	clusterName := cluster.Name
 
-	fullCommand, cmdArgs := buildKubectlCommand(params.Context, params.Args)
-	isReadOnly := isReadOnlyCommand(params.Args)
+	fullCommand, cmdArgs := buildKubectlCommand(params.Context, sanitizedArgs)
+	isReadOnly := isReadOnlyCommand(sanitizedArgs)
 
 	proceed, cancelResult, err := enforceExecutionMode(state, isReadOnly, clusterName, params.Context, fullCommand)
 	if err != nil {
@@ -533,7 +554,7 @@ func handleKubectlExec(k8sProvider *k8s.Provider, state *agentState, params Kube
 
 	printExecutionHeader(state, isReadOnly, fullCommand)
 
-	output, execErr := runKubectlCommand(cmdArgs)
+	output, execErr := runKubectlCommandFunc(cmdArgs)
 	if isJSONOutput(state.outputFormat) {
 		return buildKubectlJSONResult(clusterName, params.Context, fullCommand, output, execErr)
 	}
@@ -695,17 +716,36 @@ func printExecutionHeader(state *agentState, isReadOnly bool, fullCommand string
 	}
 }
 
+var runKubectlCommandFunc = runKubectlCommand
+
+// kubectlTimeout returns the effective kubectl execution timeout.
+// KOPILOT_KUBECTL_TIMEOUT accepts any value parseable by time.ParseDuration
+// (e.g. "60s", "2m"). Invalid or absent values fall back to 30s.
+func kubectlTimeout() time.Duration {
+	const defaultTimeout = 30 * time.Second
+	v := os.Getenv("KOPILOT_KUBECTL_TIMEOUT")
+	if v == "" {
+		return defaultTimeout
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return defaultTimeout
+	}
+	return d
+}
+
 func runKubectlCommand(cmdArgs []string) ([]byte, error) {
 	kubectlPath, err := exec.LookPath("kubectl")
 	if err != nil {
 		return nil, fmt.Errorf("kubectl not found in PATH: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	timeout := kubectlTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, kubectlPath, cmdArgs...)
 	out, execErr := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
-		return out, fmt.Errorf("kubectl command timed out after 30s")
+		return out, fmt.Errorf("kubectl command timed out after %s", timeout)
 	}
 	return out, execErr
 }
@@ -758,11 +798,11 @@ type SanitizeClusterParams struct {
 	IncludeSystem bool   `json:"include_system,omitempty" jsonschema:"If true, include system namespaces (kube-system, kube-public, kube-node-lease) in the scan"`
 }
 
-func defineSanitizeClusterTool(k8sProvider *k8s.Provider, state *agentState) copilot.Tool {
-	return copilot.DefineTool(
+func defineSanitizeClusterTool(k8sProvider *k8s.Provider, state *agentState) llm.Tool {
+	return llm.DefineTool(
 		toolSanitizeCluster,
 		"Lint all Deployments, StatefulSets, and DaemonSets in a cluster against Kubernetes best practices and security rules (CIS Benchmark, NSA/CISA guidelines). Returns a 0-100 score with an A-F grade, per-namespace breakdowns, and detailed findings per workload.",
-		func(params SanitizeClusterParams, inv copilot.ToolInvocation) (any, error) {
+		func(params SanitizeClusterParams, inv llm.ToolInvocation) (any, error) {
 			ctx := context.Background()
 			report, err := k8sProvider.SanitizeCluster(ctx, params.Context, params.Namespace, params.IncludeSystem)
 			if err != nil {
@@ -935,11 +975,11 @@ type MCPListServersResult struct {
 	Servers []MCPServerConfig `json:"servers"`
 }
 
-func defineMCPListServersTool(state *agentState) copilot.Tool {
-	return copilot.DefineTool(
+func defineMCPListServersTool(state *agentState) llm.Tool {
+	return llm.DefineTool(
 		toolMCPListServers,
 		"List all currently configured MCP (Model Context Protocol) servers",
-		func(_ MCPListServersParams, _ copilot.ToolInvocation) (any, error) {
+		func(_ MCPListServersParams, _ llm.ToolInvocation) (any, error) {
 			servers, err := listMCPServers(state.mcpConfigPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to list MCP servers: %w", err)
@@ -968,11 +1008,11 @@ type MCPAddServerParams struct {
 	URL  string `json:"url"  jsonschema:"HTTP(S) endpoint URL of the MCP server"`
 }
 
-func defineMCPAddServerTool(state *agentState) copilot.Tool {
-	return copilot.DefineTool(
+func defineMCPAddServerTool(state *agentState) llm.Tool {
+	return llm.DefineTool(
 		toolMCPAddServer,
 		"Add or update an MCP (Model Context Protocol) server. The new server is persisted to the config file and will be active from the next session.",
-		func(params MCPAddServerParams, _ copilot.ToolInvocation) (any, error) {
+		func(params MCPAddServerParams, _ llm.ToolInvocation) (any, error) {
 			entry := MCPServerConfig{Name: params.Name, Type: mcpHTTPType, URL: params.URL}
 			if err := addMCPServer(state.mcpConfigPath, entry); err != nil {
 				return nil, fmt.Errorf("failed to add MCP server: %w", err)
@@ -988,11 +1028,11 @@ type MCPDeleteServerParams struct {
 	Name string `json:"name" jsonschema:"Name of the MCP server to remove"`
 }
 
-func defineMCPDeleteServerTool(state *agentState) copilot.Tool {
-	return copilot.DefineTool(
+func defineMCPDeleteServerTool(state *agentState) llm.Tool {
+	return llm.DefineTool(
 		toolMCPDeleteServer,
 		"Remove a configured MCP (Model Context Protocol) server by name",
-		func(params MCPDeleteServerParams, _ copilot.ToolInvocation) (any, error) {
+		func(params MCPDeleteServerParams, _ llm.ToolInvocation) (any, error) {
 			if err := deleteMCPServer(state.mcpConfigPath, params.Name); err != nil {
 				return nil, fmt.Errorf("failed to delete MCP server: %w", err)
 			}

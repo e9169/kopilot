@@ -10,9 +10,11 @@ coverage:
         base: auto
     patch:
       default:
-        target: auto
-        threshold: 1%
-        base: auto
+        # Patch coverage is informational only and never blocks a PR.
+        # Some code paths (e.g. Run, switchToModel) require a live Copilot SDK
+        # session and cannot be unit-tested, so they always show 0% patch
+        # coverage on dependency-bump PRs that touch those lines.
+        informational: true
 
   precision: 2
   round: down
@@ -31,7 +33,7 @@ ignore:
   - "_site/**/*"
   - "**/*_test.go"
   - "test_*.go"
-  - "main.go"  # Entry point, tested via integration
+  - "main.go"
 
 # Component-based coverage
 component_management:

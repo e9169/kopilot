@@ -138,7 +138,7 @@ kopilot --version
 # Ensure it's in your PATH
 which kopilot
 
-# Test with a simple query (requires GitHub Copilot subscription)
+# Test with a simple query (requires an AI provider configured — see Next Steps)
 kopilot
 # Then type: "list clusters"
 ```
@@ -233,10 +233,22 @@ The script detects OS and architecture automatically using `uname`. If detection
 
 After installing Kopilot:
 
-1. Install and authenticate GitHub Copilot CLI (required)
+1. Authenticate with your AI provider (choose one):
+
+   **GitHub Copilot** (requires subscription and Copilot CLI):
    ```bash
-   npm install -g @github/copilot@0.0.420
+   npm install -g @github/copilot
    copilot auth login
+   ```
+
+   **OpenAI** (or any OpenAI-compatible endpoint):
+   ```bash
+   export OPENAI_API_KEY="sk-..."
+   ```
+
+   **Google Gemini**:
+   ```bash
+   export GEMINI_API_KEY="AI..."
    ```
 
 2. Verify your kubeconfig
