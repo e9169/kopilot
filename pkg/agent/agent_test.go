@@ -10,6 +10,7 @@ import (
 
 	"github.com/e9169/kopilot/pkg/k8s"
 	copilot "github.com/github/copilot-sdk/go"
+	"github.com/github/copilot-sdk/go/rpc"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -1228,4 +1229,113 @@ func TestDispatchUXCommandUnknown(t *testing.T) {
 	if handled {
 		t.Error("dispatchUXCommand should return handled=false for unknown commands")
 	}
+}
+
+func TestOnUsageEventUpdatesStateFromQuotaSnapshot(t *testing.T) {
+	state := &agentState{quotaPercentage: -1}
+	event := copilot.SessionEvent{
+		Data: &copilot.AssistantUsageData{
+			QuotaSnapshots: map[string]rpc.AssistantUsageQuotaSnapshot{
+				"premium_interactions": {
+					RemainingPercentage:    72,
+					IsUnlimitedEntitlement: true,
+					UsedRequests:           9,
+					EntitlementRequests:    100,
+				},
+			},
+		},
+	}
+
+	onUsageEvent(event, state)
+
+	if state.quotaPercentage != 72 {
+		t.Fatalf("quotaPercentage = %v, want 72", state.quotaPercentage)
+	}
+	if !state.quotaUnlimited {
+		t.Fatal("quotaUnlimited = false, want true")
+	}
+	if state.quotaUsed != 9 {
+		t.Fatalf("quotaUsed = %v, want 9", state.quotaUsed)
+	}
+	if state.quotaTotal != 100 {
+		t.Fatalf("quotaTotal = %v, want 100", state.quotaTotal)
+	}
+}
+
+func TestLoadMCPServersForSessionReturnsHTTPConfigs(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "mcp.json")
+	cfg := &mcpConfig{
+		Servers: []MCPServerConfig{
+			{Name: "alpha", Type: mcpHTTPType, URL: "http://localhost:8080"},
+			{Name: "beta", Type: mcpHTTPType, URL: "https://example.com/mcp"},
+		},
+	}
+	if err := saveMCPConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("saveMCPConfig() error = %v", err)
+	}
+
+	got := loadMCPServersForSession(cfgPath)
+	if len(got) != 2 {
+		t.Fatalf("len(loadMCPServersForSession()) = %d, want 2", len(got))
+	}
+
+	alpha, ok := got["alpha"].(copilot.MCPHTTPServerConfig)
+	if !ok {
+		t.Fatalf("alpha config type = %T, want copilot.MCPHTTPServerConfig", got["alpha"])
+	}
+	if alpha.URL != "http://localhost:8080" {
+		t.Fatalf("alpha.URL = %q, want %q", alpha.URL, "http://localhost:8080")
+	}
+
+	beta, ok := got["beta"].(copilot.MCPHTTPServerConfig)
+	if !ok {
+		t.Fatalf("beta config type = %T, want copilot.MCPHTTPServerConfig", got["beta"])
+	}
+	if beta.URL != "https://example.com/mcp" {
+		t.Fatalf("beta.URL = %q, want %q", beta.URL, "https://example.com/mcp")
+	}
+}
+
+func TestExtractAttachmentsBuildsAttachmentFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	attachedPath := filepath.Join(tmpDir, "attached.txt")
+	if err := os.WriteFile(attachedPath, []byte("hello"), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	prompt, attachments := extractAttachments("inspect @" + attachedPath + " now")
+
+	if prompt != "inspect now" {
+		t.Fatalf("prompt = %q, want %q", prompt, "inspect now")
+	}
+	if len(attachments) != 1 {
+		t.Fatalf("len(attachments) = %d, want 1", len(attachments))
+	}
+
+	fileAttachment, ok := attachments[0].(copilot.AttachmentFile)
+	if !ok {
+		t.Fatalf("attachments[0] type = %T, want copilot.AttachmentFile", attachments[0])
+	}
+	if fileAttachment.Path != attachedPath {
+		t.Fatalf("attachment path = %q, want %q", fileAttachment.Path, attachedPath)
+	}
+	if fileAttachment.DisplayName != "attached.txt" {
+		t.Fatalf("attachment display name = %q, want %q", fileAttachment.DisplayName, "attached.txt")
+	}
+}
+
+func TestPrintAttachmentsHandlesFileAndPointerVariants(t *testing.T) {
+	tmpDir := t.TempDir()
+	attachedPath := filepath.Join(tmpDir, "a.txt")
+	if err := os.WriteFile(attachedPath, []byte("content"), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	fileValue := copilot.AttachmentFile{Path: attachedPath, DisplayName: "a.txt"}
+	filePtr := &copilot.AttachmentFile{Path: attachedPath, DisplayName: "a.txt"}
+	dirAttachment := copilot.AttachmentDirectory{Path: tmpDir, DisplayName: "tmp"}
+
+	printAttachments([]copilot.Attachment{fileValue, filePtr, dirAttachment}, OutputText)
+	printAttachments([]copilot.Attachment{fileValue}, OutputJSON)
 }
