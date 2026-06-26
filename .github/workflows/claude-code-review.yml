@@ -12,9 +12,10 @@ on:
 
 jobs:
   claude-review:
-    # Skip for dependabot PRs: secrets are not available in dependabot workflows,
-    # causing the OIDC token exchange to fail with "User does not have write access".
-    if: github.actor != 'dependabot[bot]'
+    # Skip for dependabot PRs: secrets are unavailable and the Anthropic GitHub App
+    # OIDC exchange fails with "User does not have write access on this repository".
+    # Use pull_request.user.login (PR author) rather than github.actor (last pusher).
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
 
     runs-on: ubuntu-latest
     permissions:
