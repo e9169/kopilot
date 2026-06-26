@@ -5,12 +5,22 @@ import (
 
 	"github.com/e9169/kopilot/pkg/llm"
 	sdk "github.com/github/copilot-sdk/go"
+	"github.com/github/copilot-sdk/go/rpc"
 )
+
+func httpURL(t *testing.T, cfg sdk.MCPServerConfig) string {
+	t.Helper()
+	http, ok := cfg.(sdk.MCPHTTPServerConfig)
+	if !ok {
+		t.Fatalf("expected MCPHTTPServerConfig, got %T", cfg)
+	}
+	return http.URL
+}
 
 func TestParseMCPServersWithTypedMap(t *testing.T) {
 	extra := map[string]any{
 		"MCPServers": map[string]sdk.MCPServerConfig{
-			"a": {"type": "http", "url": "http://localhost:3030/mcp"},
+			"a": sdk.MCPHTTPServerConfig{URL: "http://localhost:3030/mcp"},
 		},
 	}
 
@@ -18,11 +28,8 @@ func TestParseMCPServersWithTypedMap(t *testing.T) {
 	if got == nil {
 		t.Fatal("parseMCPServers() returned nil")
 	}
-	if got["a"]["type"] != "http" {
-		t.Fatalf("type mismatch: got %q", got["a"]["type"])
-	}
-	if got["a"]["url"] != "http://localhost:3030/mcp" {
-		t.Fatalf("url mismatch: got %q", got["a"]["url"])
+	if url := httpURL(t, got["a"]); url != "http://localhost:3030/mcp" {
+		t.Fatalf("url mismatch: got %q", url)
 	}
 }
 
@@ -37,11 +44,8 @@ func TestParseMCPServersWithGenericMap(t *testing.T) {
 	if got == nil {
 		t.Fatal("parseMCPServers() returned nil")
 	}
-	if got["b"]["type"] != "http" {
-		t.Fatalf("type mismatch: got %q", got["b"]["type"])
-	}
-	if got["b"]["url"] != "https://example.com/mcp" {
-		t.Fatalf("url mismatch: got %q", got["b"]["url"])
+	if url := httpURL(t, got["b"]); url != "https://example.com/mcp" {
+		t.Fatalf("url mismatch: got %q", url)
 	}
 }
 
@@ -61,8 +65,8 @@ func TestParseMCPServerEntryWithStringMap(t *testing.T) {
 	if !ok {
 		t.Fatal("parseMCPServerEntry should accept map[string]string")
 	}
-	if got["url"] != "https://example.com/mcp" {
-		t.Fatalf("url mismatch: got %q", got["url"])
+	if url := httpURL(t, got); url != "https://example.com/mcp" {
+		t.Fatalf("url mismatch: got %q", url)
 	}
 }
 
@@ -83,35 +87,24 @@ func TestConvertSDKEventKnownTypes(t *testing.T) {
 		want  llm.EventType
 	}{
 		{
-			name: "assistant message",
-			event: sdk.SessionEvent{
-				Type: "assistant.message",
-				Data: &sdk.AssistantMessageData{Content: "hello"},
-			},
-			want: llm.EventMessage,
+			name:  "assistant message",
+			event: sdk.SessionEvent{Data: &rpc.AssistantMessageData{Content: "hello"}},
+			want:  llm.EventMessage,
 		},
 		{
-			name: "assistant delta",
-			event: sdk.SessionEvent{
-				Type: "assistant.message_delta",
-				Data: &sdk.AssistantMessageDeltaData{DeltaContent: "h"},
-			},
-			want: llm.EventDelta,
+			name:  "assistant delta",
+			event: sdk.SessionEvent{Data: &rpc.AssistantMessageDeltaData{DeltaContent: "h"}},
+			want:  llm.EventDelta,
 		},
 		{
-			name: "session error",
-			event: sdk.SessionEvent{
-				Type: "session.error",
-				Data: &sdk.SessionErrorData{Message: "boom"},
-			},
-			want: llm.EventError,
+			name:  "session error",
+			event: sdk.SessionEvent{Data: &rpc.SessionErrorData{Message: "boom"}},
+			want:  llm.EventError,
 		},
 		{
-			name: "session idle",
-			event: sdk.SessionEvent{
-				Type: "session.idle",
-			},
-			want: llm.EventIdle,
+			name:  "session idle",
+			event: sdk.SessionEvent{Data: &rpc.SessionIdleData{}},
+			want:  llm.EventIdle,
 		},
 	}
 
@@ -129,7 +122,7 @@ func TestConvertSDKEventKnownTypes(t *testing.T) {
 }
 
 func TestConvertSDKEventUnknownType(t *testing.T) {
-	got, ok := convertSDKEvent(sdk.SessionEvent{Type: "unknown.type"})
+	got, ok := convertSDKEvent(sdk.SessionEvent{Data: rpc.RawSessionEventData{EventType: "unknown.type"}})
 	if ok {
 		t.Fatalf("unknown event should return ok=false, got %#v", got)
 	}

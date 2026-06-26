@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/chzyer/readline v1.5.1
-	github.com/github/copilot-sdk/go v0.2.2
+	github.com/github/copilot-sdk/go v1.0.4
 	github.com/invopop/jsonschema v0.14.0
 	github.com/klauspost/compress v1.18.6
 	github.com/mark3labs/mcp-go v0.52.0
@@ -33,6 +33,7 @@ require (
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/ccojocar/zxcvbn-go v1.0.4 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect

@@ -6,6 +6,7 @@ import (
 
 	"github.com/e9169/kopilot/pkg/llm"
 	sdk "github.com/github/copilot-sdk/go"
+	"github.com/github/copilot-sdk/go/rpc"
 )
 
 // Provider implements llm.Provider using the GitHub Copilot SDK.
@@ -71,23 +72,13 @@ func parseMCPServerEntry(cfgAny any) (sdk.MCPServerConfig, bool) {
 	case sdk.MCPServerConfig:
 		return cfg, true
 	case map[string]string:
-		entry := sdk.MCPServerConfig{}
-		if v := cfg["type"]; v != "" {
-			entry["type"] = v
+		if url := cfg["url"]; url != "" {
+			return sdk.MCPHTTPServerConfig{URL: url}, true
 		}
-		if v := cfg["url"]; v != "" {
-			entry["url"] = v
-		}
-		return entry, len(entry) > 0
 	case map[string]any:
-		entry := sdk.MCPServerConfig{}
-		if v, ok := cfg["type"].(string); ok && v != "" {
-			entry["type"] = v
+		if url, ok := cfg["url"].(string); ok && url != "" {
+			return sdk.MCPHTTPServerConfig{URL: url}, true
 		}
-		if v, ok := cfg["url"].(string); ok && v != "" {
-			entry["url"] = v
-		}
-		return entry, len(entry) > 0
 	}
 	return nil, false
 }
@@ -131,7 +122,7 @@ func (p *Provider) CreateSession(ctx context.Context, config *llm.SessionConfig)
 
 	session, err := p.client.CreateSession(ctx, &sdk.SessionConfig{
 		Model:               config.Model,
-		Streaming:           config.Streaming,
+		Streaming:           sdk.Bool(config.Streaming),
 		Tools:               sdkTools,
 		SystemMessage:       &sdk.SystemMessageConfig{Mode: "replace", Content: config.SystemMessage},
 		OnPermissionRequest: sdk.PermissionHandler.ApproveAll,
@@ -161,33 +152,33 @@ func (s *Session) SendPrompt(ctx context.Context, prompt string) error {
 
 func convertSDKEvent(sdkEvent sdk.SessionEvent) (llm.Event, bool) {
 	event := llm.Event{}
-	switch sdkEvent.Type {
-	case "assistant.message":
+	switch sdkEvent.Type() {
+	case sdk.SessionEventTypeAssistantMessage:
 		event.Type = llm.EventMessage
-		if d, ok := sdkEvent.Data.(*sdk.AssistantMessageData); ok {
+		if d, ok := sdkEvent.Data.(*rpc.AssistantMessageData); ok {
 			event.Data = &llm.MessageData{Content: d.Content}
 		}
-	case "assistant.message_delta":
+	case sdk.SessionEventTypeAssistantMessageDelta:
 		event.Type = llm.EventDelta
-		if d, ok := sdkEvent.Data.(*sdk.AssistantMessageDeltaData); ok {
+		if d, ok := sdkEvent.Data.(*rpc.AssistantMessageDeltaData); ok {
 			event.Data = &llm.DeltaData{Content: d.DeltaContent}
 		}
-	case "session.error":
+	case sdk.SessionEventTypeSessionError:
 		event.Type = llm.EventError
-		if d, ok := sdkEvent.Data.(*sdk.SessionErrorData); ok {
+		if d, ok := sdkEvent.Data.(*rpc.SessionErrorData); ok {
 			event.Data = &llm.ErrorData{Message: d.Message}
 		}
-	case "session.idle":
+	case sdk.SessionEventTypeSessionIdle:
 		event.Type = llm.EventIdle
-	case "assistant.usage":
+	case sdk.SessionEventTypeAssistantUsage:
 		event.Type = llm.EventUsage
-		if d, ok := sdkEvent.Data.(*sdk.AssistantUsageData); ok && d.QuotaSnapshots != nil {
+		if d, ok := sdkEvent.Data.(*rpc.AssistantUsageData); ok && d.QuotaSnapshots != nil {
 			if snapshot, exists := d.QuotaSnapshots["premium_interactions"]; exists {
 				event.Data = &llm.UsageData{
 					QuotaPercentage: snapshot.RemainingPercentage,
 					QuotaUnlimited:  snapshot.IsUnlimitedEntitlement,
-					QuotaUsed:       snapshot.UsedRequests,
-					QuotaTotal:      snapshot.EntitlementRequests,
+					QuotaUsed:       float64(snapshot.UsedRequests),
+					QuotaTotal:      float64(snapshot.EntitlementRequests),
 				}
 			}
 		}
