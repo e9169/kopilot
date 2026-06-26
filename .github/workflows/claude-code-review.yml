@@ -12,11 +12,10 @@ on:
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+    # Skip for dependabot PRs: secrets are unavailable and the Anthropic GitHub App
+    # OIDC exchange fails with "User does not have write access on this repository".
+    # Use pull_request.user.login (PR author) rather than github.actor (last pusher).
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
 
     runs-on: ubuntu-latest
     permissions:
@@ -41,4 +40,3 @@ jobs:
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
-
