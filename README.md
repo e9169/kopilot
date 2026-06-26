@@ -123,8 +123,8 @@ kopilot
 This project uses the following key dependencies:
 
 - **GitHub Copilot SDK**: `github.com/github/copilot-sdk/go@v0.1.30`
-- **Kubernetes Client**: `k8s.io/client-go@v0.35.2`
-- **Kubernetes API**: `k8s.io/api@v0.35.2`
+- **Kubernetes Client**: `k8s.io/client-go@v0.36.2`
+- **Kubernetes API**: `k8s.io/api@v0.36.2`
 
 Run `go mod verify` to ensure dependency integrity.
 
@@ -136,7 +136,7 @@ Run `go mod verify` to ensure dependency integrity.
 | Copilot CLI | 0.0.350 | **0.0.420** | SDK v0.1.30 protocol compatibility |
 | Copilot SDK | v0.1.29 | v0.1.30 | Current version |
 | kubectl | Any | Latest | Must be in PATH |
-| Kubernetes | 1.28+ | 1.35.2 | API compatibility |
+| Kubernetes | 1.28+ | 1.36.2 | API compatibility |
 
 ## Installation
 
