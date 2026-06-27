@@ -7,7 +7,7 @@ require (
 	github.com/github/copilot-sdk/go v1.0.4
 	github.com/invopop/jsonschema v0.14.0
 	github.com/klauspost/compress v1.18.6
-	github.com/mark3labs/mcp-go v0.52.0
+	github.com/mark3labs/mcp-go v0.55.1
 	github.com/sashabaranov/go-openai v1.41.2
 	github.com/securego/gosec/v2 v2.22.4
 	google.golang.org/genai v1.54.0
