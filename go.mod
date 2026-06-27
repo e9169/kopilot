@@ -10,7 +10,7 @@ require (
 	github.com/mark3labs/mcp-go v0.52.0
 	github.com/sashabaranov/go-openai v1.41.2
 	github.com/securego/gosec/v2 v2.22.4
-	google.golang.org/genai v1.54.0
+	google.golang.org/genai v1.62.0
 	k8s.io/api v0.36.2
 	k8s.io/apimachinery v0.36.2
 	k8s.io/client-go v0.36.2
